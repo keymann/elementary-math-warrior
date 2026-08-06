@@ -29,6 +29,7 @@ type Agg = {
   timeSum: number;
   levelSum: number;
   levelUpSum: number;
+  questionSum: number;
   killSum: number;
   evolvedRuns: number;
   /** 6분 이상 생존한 판 (각성을 볼 기회가 있었던 판) */
@@ -39,7 +40,7 @@ type Agg = {
 
 const emptyAgg = (): Agg => ({
   n: 0, cleared: 0, timeSum: 0, levelSum: 0, levelUpSum: 0, killSum: 0,
-  evolvedRuns: 0, longRuns: 0, longEvolved: 0, deaths: [],
+  questionSum: 0, evolvedRuns: 0, longRuns: 0, longEvolved: 0, deaths: [],
 });
 
 /** 각성을 볼 기회가 있었다고 보는 최소 생존 시간(초) */
@@ -52,6 +53,7 @@ function add(a: Agg, r: RunResult) {
   a.timeSum += r.time;
   a.levelSum += r.level;
   a.levelUpSum += r.levelUps;
+  a.questionSum += r.questions;
   a.killSum += r.kills;
   if (r.evolved.length) a.evolvedRuns++;
   if (r.time >= LONG_RUN_SEC) {
@@ -108,6 +110,9 @@ export function runBatch(runsPerCell: number, maxSeconds: number) {
   const ok = (b: boolean) => (b ? '✅' : '⚠️');
   push(`  ${ok(clearRate >= 35 && clearRate <= 50)} 클리어율        ${clearRate.toFixed(1)}%   (목표 35~50%)`);
   push(`  ${ok(lvUps >= 15 && lvUps <= 20)} 레벨업 횟수     ${lvUps.toFixed(1)}회  (목표 15~20)`);
+  const qs = all.questionSum / all.n;
+  const gap = all.timeSum / all.n / Math.max(1, qs);
+  push(`  📝 출제 문항      ${qs.toFixed(1)}개  · 평균 간격 ${gap.toFixed(0)}초`);
   const evoLong = all.longRuns ? (all.longEvolved / all.longRuns) * 100 : 0;
   push(`  ${ok(evoLong >= 70)} 각성 도달률     ${evoLong.toFixed(1)}%   (6분 이상 생존 ${all.longRuns}판 기준, 목표 70%+)`);
   push(`     └ 참고: 전체 판 기준 ${evoRate.toFixed(1)}% — 조기 사망 판이 섞여 해석하기 어렵다`);

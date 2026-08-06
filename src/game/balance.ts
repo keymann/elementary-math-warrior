@@ -23,8 +23,12 @@ export const BALANCE = {
      * 보석 흡수 기본 반경.
      * 90 이었을 때, 넓게 도는 플레이(지나온 자리로 안 돌아감)에서 회수율이 크게 떨어졌다
      * (392킬에 Lv.4). 조작 스타일에 따른 성장 격차를 줄이려고 올렸다.
+     *
+     * 출제 빈도를 낮추려고 미믹 주기를 늘렸더니 **자석 아이템까지 같이 줄어** 레벨업이
+     * 18.2 → 15.0 회로 떨어졌다. 미믹은 문항 공급원이자 XP 공급원이었다.
+     * 둘을 분리한다 — 문항 수는 미믹 주기로, XP 는 기본 흡수 범위로 조절한다.
      */
-    magnetRadius: 120,
+    magnetRadius: 158,
   },
 
   enemy: {
@@ -77,12 +81,15 @@ export const BALANCE = {
      * 레벨 L → L+1 에 필요한 경험치.
      * 목표: 10분 한 판에 15~20회 레벨업 (작업계획 4장).
      * 144판 시뮬레이션에서 21.2회가 나와 곡선을 약 15% 세웠다.
+     * 출제 빈도를 늦추려고 여기서 한 번 더 올렸다가 레벨업이 14.8회로 떨어지고
+     * 클리어율이 26.4%까지 내려가 되돌렸다. **출제 빈도는 보너스 주기로 조절한다** —
+     * XP 곡선을 건드리면 성장 속도까지 같이 죽는다.
      */
     xpToNext: (level: number) => 6 + 6 * (level - 1) + Math.floor((level - 1) ** 1.78),
   },
 
   special: {
-    /** 별 몬스터 — 잡으면 보너스 문제 */
+    /** 미믹 — 보물상자인 척한다. 잡으면 보너스 문제 */
     star: { hp: 90, speed: 58, radius: 20, damage: 6, xp: 12 },
     /** 생선 도둑 고양이 — 도망친다. 잡으면 생선(회복) 드랍 */
     cat: { hp: 45, speed: 165, radius: 16, damage: 4, xp: 8, fleeRadius: 260 },
@@ -122,13 +129,16 @@ export const BALANCE = {
    * 느려지기만 하는 지형은 재미가 아니라 스트레스다. 그래서 잃는 게 있으면 얻는 것도 준다.
    */
   biome: {
-    grass: { player: 1, enemy: 1, accel: 26, gem: 1, label: '' },
+    // 숲 — 기준
+    forest: { player: 1, enemy: 1, accel: 26, gem: 1, label: '' },
     // 모래에 발이 빠진다. 적도 같이 느려져 억울하지 않다
     desert: { player: 0.9, enemy: 0.88, accel: 26, gem: 1, label: '모래에 발이 푹푹 빠진다' },
-    // 얼음판 — 미끄러진다. 대신 보석이 멀리서도 끌려온다
-    snow: { player: 1.06, enemy: 1, accel: 4.2, gem: 1.45, label: '미끄러워! 방향 전환에 조심' },
-    // 마왕의 기운 — 적이 빨라진다. 대신 이동 속도도 함께 오른다
-    demon: { player: 1.08, enemy: 1.14, accel: 26, gem: 1, label: '마왕의 기운이 적을 몰아붙인다' },
+    // 단단한 현무암 — 발이 잘 붙는다. 대신 적도 거침없이 달려온다
+    basalt: { player: 1.05, enemy: 1.06, accel: 30, gem: 1, label: '단단한 바위, 발이 잘 붙는다' },
+    // 뜨거워서 오래 서 있을 수 없다 — 양쪽 다 빨라져 긴박해진다
+    lava: { player: 1.1, enemy: 1.14, accel: 26, gem: 1, label: '뜨겁다! 멈추지 말고 달려' },
+    // 구름 위 — 미끄러진다. 대신 보석이 멀리서도 끌려온다
+    sky: { player: 1.08, enemy: 1, accel: 4.2, gem: 1.45, label: '구름 위라 미끄러워!' },
   } as Record<string, { player: number; enemy: number; accel: number; gem: number; label: string }>,
 
   perf: {

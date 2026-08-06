@@ -234,13 +234,15 @@ export function makeQuizzes(
   itemId: string,
   count: number,
   rand: () => number = Math.random,
+  /** 이미 출제한 지문 — 생성 단계에서 미리 걸러 재시도 비용을 줄인다 */
+  exclude?: Set<string>,
 ): { quizzes: GameQuiz[]; failures: AdaptFailure[] } {
   const meta = window.Curriculum.itemMeta(itemId);
   const quizzes: GameQuiz[] = [];
   const failures: AdaptFailure[] = [];
   if (!meta) return { quizzes, failures };
 
-  const seen = new Set<string>();
+  const seen = new Set<string>(exclude ?? []);
   const maxTry = count * 12;
   for (let i = 0; i < maxTry && quizzes.length < count; i++) {
     const set = window.Curriculum.generateSet(itemId, 1, seen);

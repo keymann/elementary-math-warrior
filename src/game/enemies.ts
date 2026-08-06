@@ -5,7 +5,7 @@
  * `from` 은 등장 시각(초) — 시간이 갈수록 종류가 늘어나 단조로움을 줄인다.
  */
 
-export type EnemyKindId = 'basic' | 'swift' | 'tank' | 'swarm' | 'star' | 'cat';
+export type EnemyKindId = 'basic' | 'swift' | 'tank' | 'swarm' | 'mimic' | 'cat';
 
 export type EnemyKind = {
   id: EnemyKindId;
@@ -83,9 +83,10 @@ export const ENEMY_KINDS: EnemyKind[] = [
   },
   // ── 아래 둘은 디렉터가 직접 부른다. from 을 크게 두어 일반 스폰 추첨에서 빠진다.
   {
-    id: 'star',
-    emoji: '⭐',
-    color: '#ffd54a',
+    // 미믹 — 보물상자인 척하다 덤벼든다. 잡으면 보너스 문제가 나온다
+    id: 'mimic',
+    emoji: '🎁',
+    color: '#c08a3e',
     hp: 90,
     speed: 58,
     damage: 6,

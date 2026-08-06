@@ -42,6 +42,8 @@ export type RunResult = {
   passives: [string, number][];
   /** 3·6·10분 보스를 잡았는지 */
   bossesKilled: string[];
+  /** 한 판에 출제된 문항 수 (레벨업 + 보너스 + 초월 수련 + 방어막) */
+  questions: number;
   /** 실제로 돌린 스텝 수 (성능 확인용) */
   steps: number;
 };
@@ -83,6 +85,7 @@ export function runOnce(cfg: RunConfig): RunResult {
 
   let levelUps = 0;
   let upgrades = 0;
+  let questions = 0;
   const evolved: string[] = [];
   const bossesKilled: string[] = [];
 
@@ -91,6 +94,7 @@ export function runOnce(cfg: RunConfig): RunResult {
     else if (e.type === 'bossdown') bossesKilled.push(e.id);
     else if (e.type === 'bonus') {
       // 보너스 문제 — 맞히면 아이템이 떨어진다
+      questions++;
       if (rng() < cfg.accuracy) {
         const kind = rng() < 0.5 ? 'magnet' : 'bomb';
         const a = rng() * Math.PI * 2;
@@ -99,10 +103,12 @@ export function runOnce(cfg: RunConfig): RunResult {
     } else if (e.type === 'trial') {
       // 초월 수련 3문제
       let ok = 0;
+      questions += 3;
       for (let i = 0; i < 3; i++) if (rng() < cfg.accuracy) ok++;
       world.addTranscendBonus(ok);
     } else if (e.type === 'shield') {
       // 방어막은 맞힐 때까지 낸다 — 실제 게임과 같다
+      questions += Math.max(1, Math.round(1 / Math.max(0.2, cfg.accuracy)));
       world.breakShield();
     }
   });
@@ -119,6 +125,7 @@ export function runOnce(cfg: RunConfig): RunResult {
     while (world.pendingLevelUps > 0) {
       world.pendingLevelUps--;
       levelUps++;
+      questions++;
       if (rng() >= cfg.accuracy) continue;
       const choices = world.rollChoices(3);
       if (choices.length) {
@@ -140,6 +147,7 @@ export function runOnce(cfg: RunConfig): RunResult {
     weapons: [...world.weapons],
     passives: [...world.passives],
     bossesKilled,
+    questions,
     steps,
   };
 }
