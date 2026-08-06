@@ -80,6 +80,10 @@ export class Hud {
     this.slotsEl = this.root.querySelector('.slots')!;
   }
 
+  setVisible(v: boolean) {
+    this.root.style.display = v ? 'flex' : 'none';
+  }
+
   applySafeArea(s: SafeArea) {
     this.root.style.paddingTop = `${s.top + 8}px`;
     this.root.style.paddingRight = `${s.right + 12}px`;

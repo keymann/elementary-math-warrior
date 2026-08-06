@@ -279,3 +279,85 @@ body {
 .bossbar .shield { display: none; margin-top: 5px; font-size: 12px; font-weight: 700; color: #9ad7ff; }
 .bossbar.shielded .shield { display: block; }
 .bossbar.shielded .fill { background: linear-gradient(90deg, #7fb6ff, #4f7fd6); }
+
+/* ── 메타 화면 (Phase 5) ── */
+.screens {
+  position: absolute; inset: 0; display: none; overflow-y: auto;
+  background: linear-gradient(180deg, #1b2416 0%, #24331c 100%);
+  padding: calc(20px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+           calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  -webkit-overflow-scrolling: touch;
+}
+.screens.show { display: block; }
+.screen { width: min(560px, 100%); margin: 0 auto; text-align: center; }
+.screen h1 { font-size: 34px; margin: 8px 0 2px; letter-spacing: -1px; }
+.screen h2 { font-size: 21px; margin: 0 0 10px; }
+.screen .sub { color: #a9b8a0; font-size: 13.5px; margin: 0 0 18px; }
+.screen .section { margin-bottom: 18px; text-align: left; }
+.screen .label { font-size: 13px; font-weight: 800; color: #cfe0c4; margin-bottom: 8px; }
+
+.grade-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.weapon-grid { display: grid; gap: 8px; }
+.pick {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  min-height: 56px; padding: 10px 12px; width: 100%;
+  border: 2px solid rgba(255,255,255,.16); border-radius: 14px;
+  background: rgba(255,255,255,.05); color: #fff; font: inherit;
+  cursor: pointer; touch-action: manipulation;
+}
+.pick.on { border-color: #6ddc7a; background: rgba(109,220,122,.14); }
+.pick.grade { flex-direction: column; align-items: flex-start; gap: 2px; }
+.pick.grade b { font-size: 16px; }
+.pick.grade span { font-size: 11.5px; color: #a9b8a0; }
+.pick.weapon .skin {
+  position: relative; flex: 0 0 46px; height: 46px; border-radius: 12px;
+  display: grid; place-items: center; font-size: 26px; background: rgba(0,0,0,.3);
+}
+.pick.weapon .skin i { position: absolute; right: -2px; bottom: -2px; font-size: 16px; font-style: normal; }
+.pick.weapon .info { display: flex; flex-direction: column; gap: 2px; }
+.pick.weapon b { font-size: 14.5px; }
+.pick.weapon em { font-style: normal; font-size: 11px; padding: 1px 6px; border-radius: 6px; background: #e8853d; }
+.pick.weapon span { font-size: 12px; color: #c8d6bf; }
+.pick.weapon .hint { color: #ffd98a; font-size: 11.5px; }
+
+.screen .best { font-size: 13px; color: #cfe0c4; margin: 14px 0; }
+.screen .actions { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+.screen .actions.small button { font-size: 13px; min-height: 44px; padding: 0 16px; }
+.screen button.primary, .screen button.ghost {
+  min-height: 52px; padding: 0 24px; border-radius: 14px; font: inherit;
+  font-weight: 800; font-size: 16px; cursor: pointer; touch-action: manipulation; border: 0;
+}
+.screen button.primary { background: #37b24d; color: #fff; }
+.screen button.ghost { background: rgba(255,255,255,.08); color: #dfe9d8; border: 1px solid rgba(255,255,255,.18); }
+.screen.sheet { background: rgba(0,0,0,.22); border-radius: 18px; padding: 22px 18px; }
+.screen.sheet button { margin-top: 8px; width: 100%; }
+
+.how-list, .dex-list, .skill-list { list-style: none; margin: 0 0 14px; padding: 0; text-align: left; }
+.how-list li { padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.05); margin-bottom: 6px; font-size: 13.5px; line-height: 1.5; }
+.dex-list li {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 9px 10px; border-radius: 10px; background: rgba(255,255,255,.05); margin-bottom: 6px; font-size: 13px;
+}
+.dex-list .plus, .dex-list .arrow { opacity: .6; }
+.dex-list .r { font-weight: 800; color: #ffd98a; }
+
+.skill-sec { text-align: left; margin-bottom: 12px; }
+.skill-head { font-size: 12.5px; font-weight: 800; color: #cfe0c4; margin-bottom: 6px; }
+.skill-list li { padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,.05); margin-bottom: 4px; font-size: 13px; }
+.skill-list .empty { color: #8a9880; }
+
+.result-screen .hero-title { font-size: 16px; font-weight: 800; color: #ffd98a; margin-bottom: 4px; }
+.result-screen .stars { font-size: 26px; color: #ffd54a; letter-spacing: 4px; margin-bottom: 12px; }
+.result-screen .score { margin: 10px 0 4px; font-size: 14px; color: #cfe0c4; }
+.result-screen .score b { font-size: 20px; color: #fff; }
+.result-screen .newbest { color: #ffb454; font-weight: 800; margin: 6px 0; }
+
+/* ── 정지 버튼 ── */
+.pausebtn {
+  position: absolute; display: none;
+  top: calc(8px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right));
+  width: 46px; height: 46px; border-radius: 12px; font-size: 18px;
+  border: 1px solid rgba(255,255,255,.2); background: rgba(0,0,0,.45); color: #fff;
+  cursor: pointer; touch-action: manipulation;
+}
+.pausebtn.show { display: block; }
