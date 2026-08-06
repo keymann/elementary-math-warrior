@@ -11,12 +11,16 @@
 
 ```bash
 npm install
-npm run dev        # → http://localhost:5173      게임 (엔진 스캐폴드)
+npm run dev        # → http://localhost:5173       게임 (엔진 스캐폴드)
                    #   http://localhost:5173/poc.html  어댑터 PoC 검수 페이지
 npm run typecheck
 npm run build      # dist/ (index.html + poc.html + 404.html + _headers)
 npm run deploy     # 빌드 후 wrangler deploy
 ```
+
+> **배포 환경의 PoC 경로는 `/poc`** 입니다. Cloudflare 정적 자산이 `.html`을 확장자 없는
+> 경로로 정규화하므로(`html_handling: auto-trailing-slash`) `/poc.html`은 307로 `/poc`에
+> 리다이렉트됩니다. Vite dev 서버에서는 파일 경로 그대로 `/poc.html`로 접속합니다.
 
 `npm run dev`는 `host: true`로 열리므로 같은 네트워크의 실제 모바일·태블릿에서 접속해 확인할 수 있다.
 
