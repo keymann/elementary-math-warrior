@@ -1,0 +1,19 @@
+{
+  "name": "elementary-math-warrior",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "초등 수학 서바이버형 학습 게임 (Cloudflare Pages)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "deploy": "npm run build && wrangler pages deploy dist --project-name=elementary-math-warrior"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.1.7",
+    "wrangler": "^4.56.0"
+  }
+}
