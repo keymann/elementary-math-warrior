@@ -7,7 +7,7 @@
 
 ## 현재 상태
 
-**Phase 4 — 타임라인 · 보스**. 메타 UI는 Phase 5.
+**Phase 5 — 메타 · UI**. 랭킹·PWA는 Phase 6.
 
 ```bash
 npm install
@@ -50,6 +50,8 @@ npm run deploy     # 빌드 후 wrangler deploy
 | `src/game/director.ts` | 타임라인 — 보스·초월·특수 몬스터 큐 |
 | `src/game/boss.ts` | 보스 3종 + 최종보스 방어막 |
 | `src/game/pickups.ts` | 특수 아이템 — 생선·자석·폭탄 |
+| `src/ui/screens.ts` | 시작 · 게임 방법 · 도감 · 일시정지 · 결과 화면 |
+| `src/meta/save.ts` | 최고 기록 · 이어하기 (localStorage) |
 
 ### 10분 타임라인
 
