@@ -7,7 +7,7 @@
 
 ## 현재 상태
 
-**Phase 2 — 전투 코어**. 퀴즈 연결·각성은 Phase 3.
+**Phase 3 — 퀴즈 · 성장**. 타임라인·보스는 Phase 4.
 
 ```bash
 npm install
@@ -42,7 +42,11 @@ npm run deploy     # 빌드 후 wrangler deploy
 | `src/game/stats.ts` | 패시브 → 파생 스탯 파이프라인 |
 | `src/game/enemies.ts` | 적 4종 (등장 시각·가중치) |
 | `src/game/waves.ts` | 스폰 밀도·체력 스케일 |
-| `src/game/upgrades.ts` | 레벨업 보상 풀 (Phase 3에서 카드 UI가 붙음) |
+| `src/game/upgrades.ts` | 레벨업 보상 풀 (각성 짝꿍 힌트 포함) |
+| `src/game/evolution.ts` | 각성 판정 — 무기 Lv.5 + 짝꿍 패시브 |
+| `src/quiz/selector.ts` | 출제 정책 — 학년→학기군, 유형 균등, 오답 재출제 |
+| `src/quiz/extra.ts` | 보완 생성기 — 규칙 찾기·막대그래프·도형의 이동 |
+| `src/ui/overlays.ts` | 퀴즈 · 강화 카드 · 각성 연출 |
 
 ### 측정 결과 (데스크톱 Chromium)
 

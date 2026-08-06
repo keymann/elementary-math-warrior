@@ -186,3 +186,79 @@ body {
   background: #37b24d; color: #fff; font: inherit; font-weight: 800; font-size: 16px;
   cursor: pointer; touch-action: manipulation;
 }
+
+/* ── 퀴즈 · 강화 카드 (Phase 3) ── */
+/* 수식 스타일은 main.ts 에서 quiz/quiz.css 를 직접 import 한다 (@import 는 파일 선두에만 유효) */
+
+.quiz-overlay .panel, .card-overlay .panel {
+  width: min(560px, 94vw); max-height: 90vh; overflow-y: auto;
+}
+.quiz-overlay .tag {
+  display: inline-block; padding: 5px 12px; border-radius: 999px;
+  background: #2f6fed; font-size: 13px; font-weight: 700; margin-bottom: 12px;
+}
+.quiz-overlay .q {
+  min-height: 70px; display: grid; place-items: center;
+  padding: 14px 10px; margin-bottom: 14px;
+  background: rgba(0, 0, 0, 0.25); border-radius: 12px; color: #f2f7ee;
+}
+.quiz-overlay .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.quiz-overlay .choice {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 56px; padding: 8px 12px;
+  border: 2px solid rgba(255, 255, 255, 0.2); border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06); color: #fff;
+  font: inherit; font-size: 19px; font-weight: 700;
+  cursor: pointer; touch-action: manipulation;
+}
+.quiz-overlay .choice:active { transform: scale(.98); }
+.quiz-overlay .choice .n {
+  flex: 0 0 24px; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.quiz-overlay .choice.correct { border-color: #4ad07a; background: rgba(74, 208, 122, 0.22); }
+.quiz-overlay .choice.wrong { border-color: #e56b6b; background: rgba(229, 107, 107, 0.2); }
+.quiz-overlay .choice:disabled { cursor: default; }
+.quiz-overlay .explain { min-height: 22px; margin-top: 12px; font-size: 14px; }
+.quiz-overlay .explain .ok { color: #7ee08a; }
+.quiz-overlay .explain .bad { color: #ffb0b0; }
+.quiz-overlay .explain .sub { color: #a9b8a0; font-size: 13px; }
+
+.card-overlay h2 { margin: 0 0 14px; font-size: 19px; }
+.card-row { display: grid; gap: 8px; }
+.card {
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  min-height: 66px; padding: 10px 14px;
+  border: 2px solid rgba(255, 255, 255, 0.18); border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06); color: #fff; font: inherit;
+  cursor: pointer; touch-action: manipulation;
+}
+.card:active { transform: scale(.99); }
+.card .ico { font-size: 28px; flex: 0 0 34px; text-align: center; }
+.card .body { display: flex; flex-direction: column; gap: 3px; }
+.card .nm { font-size: 15px; font-weight: 800; }
+.card .ds { font-size: 12.5px; color: #c8d6bf; }
+.card .new { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: #e8a33d; color: #1b2416; }
+.card .lv { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: #2f6fed; }
+.card .hint { display: block; margin-top: 3px; font-size: 11.5px; color: #ffd98a; }
+
+/* ── 각성 연출 ── */
+.awaken {
+  position: absolute; inset: 0; display: grid; place-content: center; gap: 6px;
+  text-align: center; pointer-events: none; z-index: 5;
+  animation: awakenFade 1.8s ease-out forwards;
+}
+.awaken .line { font-size: 16px; color: #ffd98a; letter-spacing: 2px; }
+.awaken .name { font-size: 30px; font-weight: 900; text-shadow: 0 0 18px rgba(255, 217, 138, .8); }
+.awaken .from { font-size: 13px; color: #cfe0c4; }
+@keyframes awakenFade {
+  0% { opacity: 0; transform: scale(.9); }
+  15% { opacity: 1; transform: scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (max-width: 430px) {
+  .quiz-overlay .choices { grid-template-columns: 1fr; }
+}

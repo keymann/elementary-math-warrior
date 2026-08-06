@@ -1,0 +1,58 @@
+/* 수식 렌더 스타일.
+   원 프로젝트(low-grade-operator-exercise-web)의 styles.css 에서 발췌해
+   게임과 PoC 검수 페이지가 함께 쓴다. */
+
+.expr {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 20px;
+  line-height: 1.9;
+  max-width: 100%;
+  justify-content: center;
+}
+.expr .t { white-space: nowrap; }
+.expr .t.lbl { white-space: normal; word-break: keep-all; overflow-wrap: anywhere; }
+.expr .op { padding: 0 2px; opacity: 0.8; }
+
+.blank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 34px;
+  padding: 0 8px;
+  border: 2px solid currentColor;
+  border-radius: 8px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.blank.ask { border-style: dashed; }
+
+.frac { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; margin: 0 3px; }
+.frac .fn, .frac .fd { padding: 0 6px; line-height: 1.2; }
+.frac .fl { width: 100%; min-width: 26px; height: 2px; background: currentColor; margin: 1px 0; }
+.frac .blank { min-width: 34px; height: 26px; margin: 1px 0; }
+.mixed { display: inline-flex; align-items: center; gap: 3px; }
+.qr, .pair { display: inline-flex; align-items: center; gap: 4px; }
+
+.vexpr {
+  display: inline-grid;
+  grid-template-columns: 1.2em auto;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  font-size: 22px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 2px;
+}
+.vexpr .vop { grid-column: 1; text-align: center; font-weight: 600; opacity: 0.8; }
+.vexpr .vnum { grid-column: 2; text-align: right; white-space: nowrap; letter-spacing: 2px; }
+.vexpr .vline { grid-column: 1 / -1; height: 2px; background: currentColor; margin: 3px 0; }
+.vexpr .vans { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+.vexpr .vans .blank { min-width: 60px; }
+
+/* 보완 문제용 — 막대그래프 */
+.bar { letter-spacing: 2px; color: #6dc4ff; font-size: 20px; }

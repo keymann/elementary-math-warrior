@@ -7,13 +7,23 @@
 import type { Rng } from '../core/rng';
 import { PASSIVES, type PassiveId } from './stats';
 import { WEAPONS, type WeaponId } from './weapons';
+import { PARTNER_OF } from './evolution';
 
 /** 무기·패시브 슬롯 상한. 원작 HUD 도 각 4칸이었다. */
 export const MAX_WEAPONS = 4;
 export const MAX_PASSIVES = 4;
 
 export type Upgrade =
-  | { type: 'weapon'; id: WeaponId; emoji: string; level: number; isNew: boolean; text: string }
+  | {
+      type: 'weapon';
+      id: WeaponId;
+      emoji: string;
+      level: number;
+      isNew: boolean;
+      text: string;
+      /** 각성 짝꿍 패시브 — 카드에 상시 표기해 진화 조건을 추측하지 않게 한다 */
+      partner?: PassiveId;
+    }
   | { type: 'passive'; id: PassiveId; emoji: string; level: number; isNew: boolean; text: string };
 
 export type OwnedState = {
@@ -25,9 +35,10 @@ function weaponCandidates(owned: OwnedState): Upgrade[] {
   const out: Upgrade[] = [];
   for (const w of WEAPONS) {
     const lv = owned.weapons.get(w.id) ?? 0;
+    const partner = PARTNER_OF.get(w.id);
     if (lv === 0) {
       if (owned.weapons.size >= MAX_WEAPONS) continue; // 슬롯 없음
-      out.push({ type: 'weapon', id: w.id, emoji: w.emoji, level: 1, isNew: true, text: w.describe });
+      out.push({ type: 'weapon', id: w.id, emoji: w.emoji, level: 1, isNew: true, text: w.describe, partner });
     } else if (lv < w.maxLevel) {
       out.push({
         type: 'weapon',
@@ -36,6 +47,7 @@ function weaponCandidates(owned: OwnedState): Upgrade[] {
         level: lv + 1,
         isNew: false,
         text: `Lv.${lv} → ${lv + 1}`,
+        partner,
       });
     }
   }
