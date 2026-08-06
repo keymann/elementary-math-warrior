@@ -370,6 +370,7 @@ export class World {
           pr.orbitSpeed = init.orbitSpeed ?? 0;
           pr.splash = init.splash ?? 0;
           pr.rehit = init.rehit ?? 0;
+          pr.owner = id;
         },
       };
       def.fire(ctx, spec);
