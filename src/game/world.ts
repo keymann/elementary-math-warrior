@@ -16,6 +16,7 @@ import { makeProjectilePool, nextPid, stepProjectile, type Projectile } from './
 import { computeStats, type PassiveId, type Stats } from './stats';
 import { STARTER_WEAPONS, WEAPON_BY_ID, type FireContext, type WeaponId } from './weapons';
 import { rollUpgrades, type Upgrade } from './upgrades';
+import { findEvolutions, type Evolution } from './evolution';
 
 export type Enemy = {
   alive: boolean;
@@ -59,7 +60,9 @@ export type Player = {
 };
 
 export type RunEvent =
-  | { type: 'levelup'; level: number; picked: Upgrade; choices: Upgrade[] }
+  /** 레벨업 발생 — 여기서 게임을 멈추고 퀴즈 → 카드 순서로 진행한다 */
+  | { type: 'levelup'; level: number }
+  | { type: 'awaken'; evolution: Evolution }
   | { type: 'gameover'; reason: 'dead' | 'cleared' };
 
 const maxEnemyRadius = Math.max(...ENEMY_KINDS.map((k) => k.radius));
@@ -90,6 +93,8 @@ export class World {
 
   /** 성능 측정용 — 0이 아니면 이 수까지 즉시 채운다 */
   stressTarget = 0;
+  /** 처리 대기 중인 레벨업 수. 대량 획득으로 한 번에 여러 레벨이 오를 수 있다. */
+  pendingLevelUps = 0;
 
   constructor(seed = 1, starter: WeaponId = STARTER_WEAPONS[0]) {
     this.rng = makeRng(seed);
@@ -480,15 +485,35 @@ export class World {
   }
 
   /**
-   * Phase 2: 보상을 자동으로 고른다.
-   * Phase 3 에서 이 자리에 퀴즈 → 3택 카드가 들어간다.
+   * 레벨업은 여기서 **적용하지 않는다.**
+   * 바깥(main)이 게임을 멈추고 퀴즈를 띄운 뒤, 정답이면 카드 3택을 받아 적용한다.
+   * 퀴즈가 열려 있는 동안 타이머가 멈추는 것이 이 게임의 핵심 규칙이다
+   * (원작 블랙박스 측정 3장 — 문제 푸는 시간이 생존 시간을 깎지 않는다).
    */
   private levelUp() {
-    const choices = rollUpgrades({ weapons: this.weapons, passives: this.passives }, this.rng, 3);
-    if (!choices.length) return;
-    const picked = choices[Math.floor(this.rng() * choices.length)];
-    this.applyUpgrade(picked);
-    this.emit({ type: 'levelup', level: this.player.level, picked, choices });
+    this.pendingLevelUps++;
+    this.emit({ type: 'levelup', level: this.player.level });
+  }
+
+  /** 보상 후보 3장 */
+  rollChoices(n = 3): Upgrade[] {
+    return rollUpgrades({ weapons: this.weapons, passives: this.passives }, this.rng, n);
+  }
+
+  /**
+   * 각성 판정 — 레벨업 문제를 맞힌 뒤에만 호출한다.
+   * 조건을 만족하는 조합이 있으면 하나 진화시키고 그 조합을 돌려준다.
+   */
+  tryEvolve(): Evolution | null {
+    const found = findEvolutions(this.weapons, this.passives);
+    if (!found.length) return null;
+    const e = found[0];
+    this.weapons.delete(e.base);
+    this.cooldowns.delete(e.base);
+    this.weapons.set(e.result, 1);
+    this.cooldowns.set(e.result, 0);
+    this.emit({ type: 'awaken', evolution: e });
+    return e;
   }
 
   applyUpgrade(u: Upgrade) {
@@ -537,5 +562,6 @@ export class World {
     this.over = null;
     this.spawnAcc = 0;
     this.shakeRequest = 0;
+    this.pendingLevelUps = 0;
   }
 }

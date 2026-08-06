@@ -22,6 +22,8 @@ export type HudModel = {
   frameMs: number;
   dpr: number;
   lowPerf: boolean;
+  /** 정답률 0~1. 아직 푼 문제가 없으면 null */
+  accuracy: number | null;
   weapons: SlotView[];
   passives: SlotView[];
 };
@@ -34,6 +36,7 @@ export class Hud {
   private timeEl: HTMLElement;
   private lvEl: HTMLElement;
   private killEl: HTMLElement;
+  private accEl: HTMLElement;
   private debugEl: HTMLElement;
   private slotsEl: HTMLElement;
 
@@ -42,6 +45,7 @@ export class Hud {
   private lastXp = -1;
   private lastLv = -1;
   private lastKills = -1;
+  private lastAcc = -2;
   private lastFps = -1;
   private lastSlots = '';
 
@@ -56,6 +60,7 @@ export class Hud {
           <div class="hp"><div class="hp-fill"></div><span class="hp-text"></span></div>
           <div class="timer"></div>
           <div class="pill kills"></div>
+          <div class="pill acc"></div>
         </div>
       </div>
       <div class="hud-bottom">
@@ -70,6 +75,7 @@ export class Hud {
     this.timeEl = this.root.querySelector('.timer')!;
     this.lvEl = this.root.querySelector('.lv')!;
     this.killEl = this.root.querySelector('.kills')!;
+    this.accEl = this.root.querySelector('.acc')!;
     this.debugEl = this.root.querySelector('.debug')!;
     this.slotsEl = this.root.querySelector('.slots')!;
   }
@@ -120,6 +126,12 @@ export class Hud {
       this.slotsEl.innerHTML =
         m.weapons.map((w) => cell(w, 'w')).join('') + m.passives.map((p) => cell(p, 'p')).join('');
       this.lastSlots = sig;
+    }
+
+    const acc = m.accuracy ?? -1;
+    if (acc !== this.lastAcc) {
+      this.accEl.textContent = m.accuracy === null ? '📝 -' : `📝 ${Math.round(m.accuracy * 100)}%`;
+      this.lastAcc = acc;
     }
 
     if (m.fps !== this.lastFps) {
