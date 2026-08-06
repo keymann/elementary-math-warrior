@@ -1,0 +1,140 @@
+/* 게임 화면 — 모바일·태블릿에서 브라우저 UI 제스처가 조작을 방해하지 않도록 잠근다. */
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #1b2416;
+  color: #fff;
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', system-ui, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  /* 바운스 스크롤·당겨서 새로고침 차단 */
+  overscroll-behavior: none;
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* 캔버스 위 스크롤·확대·더블탭 줌 차단 — 조이스틱 드래그가 스크롤로 새지 않게 한다 */
+  touch-action: none;
+}
+
+/* ── HUD ── */
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* 게임 조작을 가리지 않는다 */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.hud-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hp {
+  position: relative;
+  flex: 0 1 220px;
+  height: 22px;
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.15);
+}
+
+.hp-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #6ddc7a, #37b24d);
+  transition: width 0.15s linear;
+}
+
+.hp-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.timer {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.debug {
+  align-self: flex-start;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.debug .ok {
+  color: #7ee08a;
+}
+
+.debug .warn {
+  color: #ffb454;
+}
+
+/* ── 개발용 컨트롤 (Phase 2에서 제거) ── */
+.devbar {
+  position: absolute;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  max-width: 60vw;
+}
+
+.devbar button {
+  /* 터치 타깃 최소 44px */
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.devbar button.on {
+  background: #2f6fed;
+  border-color: #2f6fed;
+}

@@ -8,6 +8,14 @@ export default defineConfig({
     outDir: 'dist',
     target: 'es2022',
     sourcemap: true,
+    rollupOptions: {
+      input: {
+        // 게임 본편
+        main: 'index.html',
+        // 퀴즈 어댑터 검수 페이지 (개발용, /poc.html)
+        poc: 'poc.html',
+      },
+    },
   },
   server: {
     host: true, // 같은 네트워크의 실제 모바일/태블릿 기기에서 접속해 확인하기 위함
