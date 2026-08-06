@@ -23,6 +23,7 @@ import { findEvolutions, type Evolution } from './evolution';
 import { Director, type TimelineEvent } from './director';
 import { BOSSES, makeBoss, type Boss, type BossKindId } from './boss';
 import { makePickupPool, type Pickup, type PickupKind } from './pickups';
+import { biomeAt } from '../render/terrain';
 
 export type Enemy = {
   alive: boolean;
@@ -48,6 +49,9 @@ export type Player = {
   y: number;
   px: number;
   py: number;
+  /** 실제 속도 — 지형에 따라 관성이 붙는다(눈밭은 미끄럽다) */
+  vx: number;
+  vy: number;
   hp: number;
   maxHp: number;
   invuln: number;
@@ -143,6 +147,8 @@ export class World {
       y: 0,
       px: 0,
       py: 0,
+      vx: 0,
+      vy: 0,
       hp: B.player.maxHp,
       maxHp: B.player.maxHp,
       invuln: 0,
@@ -217,13 +223,25 @@ export class World {
     }
   }
 
+  /** 현재 지형의 효과 */
+  get biomeMod() {
+    return B.biome[biomeAt(this.time)] ?? B.biome.grass;
+  }
+
   private movePlayer(dt: number, axis: Vec2) {
     const p = this.player;
     p.px = p.x;
     p.py = p.y;
-    const sp = B.player.speed * this.stats.moveSpeed;
-    p.x += axis.x * sp * dt;
-    p.y += axis.y * sp * dt;
+
+    const mod = this.biomeMod;
+    const sp = B.player.speed * this.stats.moveSpeed * mod.player;
+    // 목표 속도로 서서히 붙는다. accel 이 크면 즉각 반응(기본), 작으면 미끄러진다(눈밭)
+    const k = 1 - Math.exp(-mod.accel * dt);
+    p.vx += (axis.x * sp - p.vx) * k;
+    p.vy += (axis.y * sp - p.vy) * k;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+
     if (p.invuln > 0) p.invuln -= dt;
   }
 
@@ -370,6 +388,7 @@ export class World {
           pr.orbitSpeed = init.orbitSpeed ?? 0;
           pr.splash = init.splash ?? 0;
           pr.rehit = init.rehit ?? 0;
+          pr.owner = id;
         },
       };
       def.fire(ctx, spec);
@@ -530,6 +549,7 @@ export class World {
   private stepEnemies(dt: number) {
     const p = this.player;
     const damp = Math.pow(B.enemy.knockbackDamp, dt);
+    const enemyMod = this.biomeMod.enemy;
 
     this.enemies.forEach((e) => {
       e.px = e.x;
@@ -564,8 +584,8 @@ export class World {
         sy += (oy / d) * w;
       });
 
-      e.x += (dx * kind.speed + sx * B.enemy.separation + e.kx) * dt;
-      e.y += (dy * kind.speed + sy * B.enemy.separation + e.ky) * dt;
+      e.x += (dx * kind.speed * enemyMod + sx * B.enemy.separation + e.kx) * dt;
+      e.y += (dy * kind.speed * enemyMod + sy * B.enemy.separation + e.ky) * dt;
       e.kx *= damp;
       e.ky *= damp;
 
@@ -636,7 +656,7 @@ export class World {
 
   private stepGems(dt: number) {
     const p = this.player;
-    const magnet = B.player.magnetRadius * this.stats.magnet;
+    const magnet = B.player.magnetRadius * this.stats.magnet * this.biomeMod.gem;
     const pickR = B.player.radius + B.gem.radius;
 
     this.gems.forEach((g) => {
@@ -808,6 +828,7 @@ export class World {
 
     const p = this.player;
     p.x = p.y = p.px = p.py = 0;
+    p.vx = p.vy = 0;
     p.maxHp = B.player.maxHp;
     p.hp = p.maxHp;
     p.invuln = 0;

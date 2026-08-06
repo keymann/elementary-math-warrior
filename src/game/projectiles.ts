@@ -40,6 +40,8 @@ export type Projectile = {
   splash: number;
   /** 같은 적을 다시 때릴 수 있게 되는 간격(초). 0 이면 재타격 없음 */
   rehit: number;
+  /** 어떤 무기가 쏜 것인지 — 렌더에서 이름에 맞는 모양을 고르는 데 쓴다 */
+  owner: string;
 };
 
 let pidSeq = 1;
@@ -66,6 +68,7 @@ export function makeProjectilePool() {
       orbitSpeed: 0,
       splash: 0,
       rehit: 0,
+      owner: '',
     }),
     256,
   );

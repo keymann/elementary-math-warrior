@@ -14,7 +14,10 @@ import { Loop, type LoopStats } from './core/loop';
 import { Input } from './core/input';
 import { makeRng } from './core/rng';
 import { Viewport } from './render/viewport';
-import { drawEmoji, drawGrid, drawJoystick, circle, ring } from './render/draw';
+import { drawJoystick, circle, ring } from './render/draw';
+import { drawBoss, drawCreature, drawHero, type ActorState, type CreatureId } from './render/actors';
+import { drawTerrain, BIOMES, biomeAt } from './render/terrain';
+import { drawGem, drawPickup, drawProjectile } from './render/items';
 import { World, type RunEvent } from './game/world';
 import { BALANCE as B } from './game/balance';
 import { ENEMY_KINDS } from './game/enemies';
@@ -72,6 +75,9 @@ let lowPerf = false;
 let lowFpsFor = 0;
 let banner = { text: '', until: 0 };
 let trialCorrect = 0;
+/** 주인공 애니메이션 상태 — 이동 거리로 걷기 위상을 돌린다 */
+const hero: ActorState = { walk: 0, facing: 1, hurt: 0, levelUp: 0, colorSafe: false };
+let lastBiome = biomeAt(0);
 /** 'home' 이면 게임 화면을 그리지 않는다 */
 let mode: 'home' | 'play' = 'home';
 const eventLog: string[] = [];
@@ -101,6 +107,7 @@ world.on((e: RunEvent) => {
   eventLog.push(`${world.time.toFixed(1)} ${e.type}${'id' in e ? ':' + e.id : ''}${'kind' in e ? ':' + e.kind : ''}`);
   switch (e.type) {
     case 'levelup':
+      hero.levelUp = 1; // 금빛 고리 연출
       void runLevelUpFlow();
       break;
     case 'awaken':
@@ -123,6 +130,10 @@ world.on((e: RunEvent) => {
       break;
     case 'trial':
       void runTrialFlow();
+      break;
+    case 'bossflee':
+      bossBar.classList.remove('show');
+      banner = { text: '보스가 물러났다!', until: world.time + 2 };
       break;
     case 'transcend':
       banner = { text: '🔥 초월! 힘이 솟아난다', until: world.time + 2.4 };
@@ -417,17 +428,29 @@ function render(alpha: number) {
   }
   vp.follow(pxPos, pyPos, 1 / 60);
 
-  ctx.fillStyle = '#26331f';
-  ctx.fillRect(0, 0, vp.width, vp.height);
-  drawGrid(ctx, vp.camX, vp.camY, vp.scale, vp.width, vp.height);
+  // 단계별 지형 — 3·6·9분에 바뀐다
+  drawTerrain(ctx, world.time, vp.camX, vp.camY, vp.scale, vp.width, vp.height, vp.dpr);
+  vp.begin(); // drawTerrain 이 변환을 건드리므로 되돌린다
+
+  const nowBiome = biomeAt(world.time);
+  if (nowBiome !== lastBiome && mode === 'play') {
+    lastBiome = nowBiome;
+    const eff = B.biome[nowBiome]?.label;
+    banner = {
+      text: eff ? `🗺 ${BIOMES[nowBiome].name} — ${eff}` : `🗺 ${BIOMES[nowBiome].name}에 들어섰다!`,
+      until: world.time + 3,
+    };
+  }
 
   const cull = vp.viewRadiusWorld + 90;
   const S = vp.scale;
+  const cs = getSettings().colorSafe;
+  hero.colorSafe = cs;
   const visible = (x: number, y: number) => Math.abs(x - vp.camX) < cull && Math.abs(y - vp.camY) < cull;
 
   world.gems.forEach((g) => {
     if (!visible(g.x, g.y)) return;
-    circle(ctx, vp.toScreenX(g.x), vp.toScreenY(g.y), B.gem.radius * S, g.xp > 1 ? '#ffd54a' : '#5ad1ff');
+    drawGem(ctx, vp.toScreenX(g.x), vp.toScreenY(g.y), B.gem.radius * S, g.xp > 1, world.time);
   });
 
   world.enemies.forEach((e) => {
@@ -442,45 +465,27 @@ function render(alpha: number) {
       // 색약 모드: 색만으로 구분되지 않도록 테두리 두께를 종류별로 다르게 준다
       if (getSettings().colorSafe) ring(ctx, sx, sy, kind.radius * S, '#fff', 1 + (e.kind % 3));
     } else {
-      if (e.flash > 0) circle(ctx, sx, sy, kind.radius * S * 1.15, 'rgba(255,255,255,0.75)');
-      drawEmoji(ctx, kind.emoji, sx, sy, kind.radius * 2.2 * S, vp.dpr);
+      drawCreature(ctx, kind.id as CreatureId, sx, sy, kind.radius * 2.2 * S, world.time, e.flash > 0, vp.dpr, cs);
     }
   });
 
   world.projectiles.forEach((pr) => {
     if (!visible(pr.x, pr.y)) return;
-    const sx = vp.toScreenX(pr.x);
-    const sy = vp.toScreenY(pr.y);
-    const r = pr.radius * S;
-    switch (pr.kind) {
-      case 'aura':
-        ring(ctx, sx, sy, r, 'rgba(255,255,255,0.65)', Math.max(2, 4 * S));
-        break;
-      case 'orbit':
-        circle(ctx, sx, sy, r, '#9ad7ff');
-        ring(ctx, sx, sy, r, 'rgba(255,255,255,0.6)', 2);
-        break;
-      case 'bolt':
-        circle(ctx, sx, sy, r, '#ffd166');
-        ring(ctx, sx, sy, r * 1.5, 'rgba(255,209,102,0.45)', 2);
-        break;
-      case 'cone':
-        circle(ctx, sx, sy, r, '#ffe08a');
-        break;
-      case 'pierce':
-        circle(ctx, sx, sy, r, '#b0f0d0');
-        break;
-      default:
-        circle(ctx, sx, sy, r, '#fff2c2');
-    }
+    drawProjectile(
+      ctx,
+      pr.kind,
+      pr.owner,
+      vp.toScreenX(pr.x),
+      vp.toScreenY(pr.y),
+      pr.radius * S,
+      pr.vx,
+      pr.vy,
+    );
   });
 
   world.pickups.forEach((it) => {
     if (!visible(it.x, it.y)) return;
-    const ix = vp.toScreenX(it.x);
-    const iy = vp.toScreenY(it.y) - Math.sin(it.age * 4) * 4;
-    ring(ctx, ix, iy, 22 * S, 'rgba(255,255,255,0.35)', 2);
-    drawEmoji(ctx, PICKUP_EMOJI[it.kind], ix, iy, 30 * S, vp.dpr);
+    drawPickup(ctx, it.kind, vp.toScreenX(it.x), vp.toScreenY(it.y), 16 * S, it.age);
   });
 
   if (world.boss.active) {
@@ -488,8 +493,7 @@ function render(alpha: number) {
     const bx = vp.toScreenX(b.px + (b.x - b.px) * alpha);
     const by = vp.toScreenY(b.py + (b.y - b.py) * alpha);
     const br = b.def.radius * S;
-    if (b.flash > 0) circle(ctx, bx, by, br * 1.1, 'rgba(255,255,255,0.8)');
-    drawEmoji(ctx, b.def.emoji, bx, by, br * 2.1, vp.dpr);
+    drawBoss(ctx, b.def.id, bx, by, br * 1.9, world.time, b.flash > 0, cs);
     if (b.shielded) {
       ring(ctx, bx, by, br * 1.25, 'rgba(120,200,255,0.9)', Math.max(3, 5 * S));
       ring(ctx, bx, by, br * 1.45, 'rgba(120,200,255,0.4)', Math.max(2, 3 * S));
@@ -500,10 +504,14 @@ function render(alpha: number) {
 
   const sx = vp.toScreenX(pxPos);
   const sy = vp.toScreenY(pyPos);
-  if (p.invuln > 0 && Math.floor(p.invuln * 12) % 2 === 0) {
-    ring(ctx, sx, sy, B.player.radius * S + 4, 'rgba(255,120,120,0.9)', 3);
-  }
-  drawEmoji(ctx, '🦔', sx, sy, B.player.radius * 2.6 * S, vp.dpr);
+
+  // 걷기 위상은 실제 이동 거리에 비례시킨다 — 제자리에 서면 다리도 멈춘다
+  const moved = Math.hypot(p.x - p.px, p.y - p.py);
+  hero.walk = (hero.walk + moved / 46) % 1;
+  if (Math.abs(p.x - p.px) > 0.01) hero.facing = p.x > p.px ? 1 : -1;
+  hero.hurt = Math.max(0, p.invuln - (B.player.invulnAfterHit - 0.25));
+  hero.levelUp = Math.max(0, hero.levelUp - 1 / 45);
+  drawHero(ctx, sx, sy, B.player.radius * 3.2 * S, hero);
 
   const j = input.joystick();
   if (j.active) drawJoystick(ctx, j.ox, j.oy, j.kx, j.ky, j.radius);

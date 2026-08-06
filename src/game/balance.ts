@@ -114,6 +114,23 @@ export const BALANCE = {
     trialQuestions: 3,
   },
 
+  /**
+   * 지형별 게임플레이 변화.
+   *
+   * 배경만 바뀌고 조작감이 그대로면 "그림이 바뀌었네" 로 끝난다. 구간마다 손끝에서
+   * 다르게 느껴져야 진행감이 생긴다. 다만 **초등 대상이라 벌점형 효과는 피한다** —
+   * 느려지기만 하는 지형은 재미가 아니라 스트레스다. 그래서 잃는 게 있으면 얻는 것도 준다.
+   */
+  biome: {
+    grass: { player: 1, enemy: 1, accel: 26, gem: 1, label: '' },
+    // 모래에 발이 빠진다. 적도 같이 느려져 억울하지 않다
+    desert: { player: 0.9, enemy: 0.88, accel: 26, gem: 1, label: '모래에 발이 푹푹 빠진다' },
+    // 얼음판 — 미끄러진다. 대신 보석이 멀리서도 끌려온다
+    snow: { player: 1.06, enemy: 1, accel: 4.2, gem: 1.45, label: '미끄러워! 방향 전환에 조심' },
+    // 마왕의 기운 — 적이 빨라진다. 대신 이동 속도도 함께 오른다
+    demon: { player: 1.08, enemy: 1.14, accel: 26, gem: 1, label: '마왕의 기운이 적을 몰아붙인다' },
+  } as Record<string, { player: number; enemy: number; accel: number; gem: number; label: string }>,
+
   perf: {
     /** 이 fps 아래가 lowFpsSeconds 이상 지속되면 저사양 모드로 자동 전환 */
     lowFpsThreshold: 45,
