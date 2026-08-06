@@ -129,13 +129,16 @@ export const BALANCE = {
    * 느려지기만 하는 지형은 재미가 아니라 스트레스다. 그래서 잃는 게 있으면 얻는 것도 준다.
    */
   biome: {
-    grass: { player: 1, enemy: 1, accel: 26, gem: 1, label: '' },
+    // 숲 — 기준
+    forest: { player: 1, enemy: 1, accel: 26, gem: 1, label: '' },
     // 모래에 발이 빠진다. 적도 같이 느려져 억울하지 않다
     desert: { player: 0.9, enemy: 0.88, accel: 26, gem: 1, label: '모래에 발이 푹푹 빠진다' },
-    // 얼음판 — 미끄러진다. 대신 보석이 멀리서도 끌려온다
-    snow: { player: 1.06, enemy: 1, accel: 4.2, gem: 1.45, label: '미끄러워! 방향 전환에 조심' },
-    // 마왕의 기운 — 적이 빨라진다. 대신 이동 속도도 함께 오른다
-    demon: { player: 1.08, enemy: 1.14, accel: 26, gem: 1, label: '마왕의 기운이 적을 몰아붙인다' },
+    // 단단한 현무암 — 발이 잘 붙는다. 대신 적도 거침없이 달려온다
+    basalt: { player: 1.05, enemy: 1.06, accel: 30, gem: 1, label: '단단한 바위, 발이 잘 붙는다' },
+    // 뜨거워서 오래 서 있을 수 없다 — 양쪽 다 빨라져 긴박해진다
+    lava: { player: 1.1, enemy: 1.14, accel: 26, gem: 1, label: '뜨겁다! 멈추지 말고 달려' },
+    // 구름 위 — 미끄러진다. 대신 보석이 멀리서도 끌려온다
+    sky: { player: 1.08, enemy: 1, accel: 4.2, gem: 1.45, label: '구름 위라 미끄러워!' },
   } as Record<string, { player: number; enemy: number; accel: number; gem: number; label: string }>,
 
   perf: {

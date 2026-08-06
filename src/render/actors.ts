@@ -341,6 +341,14 @@ function paintCreature(ctx: CanvasRenderingContext2D, id: CreatureId, size: numb
 
 /* ─────────────────────────── 보스 ─────────────────────────── */
 
+/**
+ * 드래곤 보스.
+ *
+ * 몬스터는 블록 조형으로 두되, 보스는 **곡선 기반의 유기적인 형태**로 그린다.
+ * 화면에 한 마리뿐이라 드로우콜 여유가 있고, 다른 적과 확실히 구분돼야 한다.
+ *
+ * 구성: 꼬리(가시) → 뒷다리 → 날개(막·손가락뼈) → 몸통(비늘 배) → 굽은 목 → 머리(뿔·이빨)
+ */
 export function drawBoss(
   ctx: CanvasRenderingContext2D,
   skin: DragonSkin,
@@ -357,132 +365,279 @@ export function drawBoss(
   colorSafe = false,
 ) {
   const u = size / 8;
-  // 걷기는 이동 거리에, 날갯짓은 그보다 빠르게 — 두 모션의 주기를 다르게 둔다
-  const step = Math.sin(anim / 9);
-  const flap = Math.sin(anim / 5.5);
-  const bob = Math.abs(flap) * u * 0.35;
+  const step = Math.sin(anim / 9); // 걷기
+  const flap = Math.sin(anim / 5.5); // 날갯짓
+  const bob = flap * u * 0.3;
+
+  const shade = (hex: string, amt: number) => {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.max(0, Math.min(255, ((n >> 16) & 255) + amt));
+    const g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amt));
+    const b = Math.max(0, Math.min(255, (n & 255) + amt));
+    return `rgb(${r},${g},${b})`;
+  };
+  const dark = shade(skin.body, -34);
+  const light = shade(skin.body, 26);
 
   ctx.save();
   ctx.translate(cx, cy - bob);
   if (facing < 0) ctx.scale(-1, 1);
+  ctx.lineJoin = 'round';
 
   // 그림자
-  ctx.globalAlpha = 0.3;
+  ctx.globalAlpha = 0.32;
   ctx.beginPath();
-  ctx.ellipse(0, size * 0.52 + bob, size * 0.42, size * 0.13, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, size * 0.54 + bob, size * 0.44, size * 0.12, 0, 0, Math.PI * 2);
   ctx.fillStyle = '#000';
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  // ── 날개 (몸통 뒤) — 위아래로 퍼덕인다
-  const wingLift = flap * 1.6;
-  const drawWing = (dir: number) => {
-    ctx.beginPath();
-    ctx.moveTo(dir * 1.4 * u, -1.6 * u);
-    ctx.lineTo(dir * 5.6 * u, (-3.4 + wingLift) * u);
-    ctx.lineTo(dir * 6.2 * u, (-0.4 + wingLift * 0.6) * u);
-    ctx.lineTo(dir * 4.2 * u, (0.8 + wingLift * 0.3) * u);
-    ctx.closePath();
-    ctx.fillStyle = skin.wing;
-    ctx.fill();
-    ctx.strokeStyle = skin.wingEdge;
-    ctx.lineWidth = Math.max(1, u * 0.28);
-    ctx.stroke();
-  };
-  drawWing(-1);
-  drawWing(1);
-
-  // ── 꼬리
+  // ── 꼬리 (몸통 뒤에서 길게 휘어 나온다)
+  const tailWag = step * 1.1;
   ctx.beginPath();
-  ctx.moveTo(-1.6 * u, 1.4 * u);
-  ctx.quadraticCurveTo(-5 * u, (2.2 + step * 0.8) * u, -6.4 * u, (0.6 + step * 1.2) * u);
-  ctx.lineWidth = u * 1.1;
-  ctx.strokeStyle = skin.body;
+  ctx.moveTo(-1.2 * u, 0.9 * u);
+  ctx.bezierCurveTo(-4 * u, (1.9 + tailWag) * u, -6.6 * u, (0.6 + tailWag * 1.6) * u, -8 * u, (-1.2 + tailWag * 2) * u);
+  ctx.lineWidth = u * 1.05;
+  ctx.strokeStyle = dark;
   ctx.lineCap = 'round';
   ctx.stroke();
+  ctx.lineWidth = u * 0.5;
+  ctx.strokeStyle = skin.body;
+  ctx.stroke();
+  // 꼬리 끝 가시
+  ctx.beginPath();
+  ctx.moveTo(-8.5 * u, (-1.2 + tailWag * 2) * u);
+  ctx.lineTo(-7.5 * u, (-2.0 + tailWag * 2) * u);
+  ctx.lineTo(-7.4 * u, (-0.5 + tailWag * 2) * u);
+  ctx.closePath();
+  ctx.fillStyle = skin.horn;
+  ctx.fill();
 
-  // ── 다리 (걷기: 앞뒤 교차)
-  const legs = step * u * 1.2;
-  px(ctx, -1.9 * u + legs, 1.5 * u, 1.5 * u, 2.2 * u, skin.body);
-  px(ctx, 0.5 * u - legs, 1.5 * u, 1.5 * u, 2.2 * u, skin.body);
-  px(ctx, -2.1 * u + legs, 3.3 * u, 1.9 * u, 0.7 * u, skin.horn);
-  px(ctx, 0.3 * u - legs, 3.3 * u, 1.9 * u, 0.7 * u, skin.horn);
+  // ── 뒷다리 (걷기: 앞뒤 교차, 무릎이 꺾인다)
+  const leg = (offX: number, phase: number, tone: string) => {
+    const sw = Math.sin(anim / 9 + phase) * 0.9;
+    ctx.beginPath();
+    ctx.moveTo(offX * u, 0.6 * u);
+    ctx.quadraticCurveTo((offX + 0.9 + sw) * u, 2.2 * u, (offX + 0.3 + sw * 1.4) * u, 3.5 * u);
+    ctx.lineWidth = u * 1.15;
+    ctx.strokeStyle = tone;
+    ctx.stroke();
+    // 발톱
+    ctx.beginPath();
+    ctx.moveTo((offX - 0.3 + sw * 1.4) * u, 3.8 * u);
+    ctx.lineTo((offX + 1.5 + sw * 1.4) * u, 3.8 * u);
+    ctx.lineWidth = u * 0.45;
+    ctx.strokeStyle = skin.horn;
+    ctx.stroke();
+  };
+  leg(-1.6, Math.PI, dark);
+  leg(0.6, 0, skin.body);
 
-  // ── 몸통
-  px(ctx, -2.4 * u, -1.8 * u, 4.8 * u, 3.6 * u, skin.body);
-  px(ctx, -1.4 * u, -0.6 * u, 2.8 * u, 2.4 * u, skin.belly);
+  // ── 날개 (막 + 손가락뼈). 위아래로 퍼덕이며 막이 접혔다 펴진다
+  const lift = flap * 1.7;
+  const wing = (dir: number, back: boolean) => {
+    const tipX = dir * (5.4 + (back ? 0.6 : 0)) * u;
+    const tipY = (-3.6 + lift) * u;
+    ctx.beginPath();
+    ctx.moveTo(dir * 1.1 * u, -1.9 * u);
+    ctx.quadraticCurveTo(dir * 3.6 * u, (-4.6 + lift) * u, tipX, tipY);
+    // 막의 아랫단 — 손가락 사이가 파인 모양
+    for (let i = 3; i >= 1; i--) {
+      const fx = dir * (1.1 + (i / 3) * 4.3) * u;
+      const fy = (-1.9 + (i / 3) * (lift + 1.4)) * u + 1.6 * u;
+      ctx.quadraticCurveTo(fx + dir * 0.5 * u, fy + 0.9 * u, fx, fy);
+    }
+    ctx.closePath();
+    ctx.fillStyle = back ? shade(skin.wing, -18) : skin.wing;
+    ctx.fill();
+    ctx.strokeStyle = skin.wingEdge;
+    ctx.lineWidth = Math.max(1, u * 0.22);
+    ctx.stroke();
+    // 손가락뼈
+    ctx.beginPath();
+    for (let i = 1; i <= 3; i++) {
+      const fx = dir * (1.1 + (i / 3) * 4.3) * u;
+      const fy = (-1.9 + (i / 3) * (lift + 1.4)) * u + 1.6 * u;
+      ctx.moveTo(dir * 1.1 * u, -1.9 * u);
+      ctx.lineTo(fx, fy);
+    }
+    ctx.strokeStyle = skin.wingEdge;
+    ctx.lineWidth = Math.max(0.8, u * 0.16);
+    ctx.stroke();
+  };
+  wing(-1, true); // 반대쪽 날개는 어둡게 — 깊이감
+  wing(1, false);
+
+  // ── 몸통 (달걀형)
+  ctx.beginPath();
+  ctx.ellipse(-0.2 * u, 0, 2.9 * u, 2.2 * u, -0.12, 0, Math.PI * 2);
+  ctx.fillStyle = skin.body;
+  ctx.fill();
+  // 배 비늘
+  ctx.beginPath();
+  ctx.ellipse(0.1 * u, 0.7 * u, 1.9 * u, 1.3 * u, -0.1, 0, Math.PI * 2);
+  ctx.fillStyle = skin.belly;
+  ctx.fill();
+  ctx.strokeStyle = shade(skin.belly, -30);
+  ctx.lineWidth = Math.max(0.7, u * 0.13);
+  for (let i = -1; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(-1.5 * u, (i * 0.62 + 0.3) * u);
+    ctx.quadraticCurveTo(0.2 * u, (i * 0.62 + 0.62) * u, 1.8 * u, (i * 0.62 + 0.3) * u);
+    ctx.stroke();
+  }
   // 등 가시
   ctx.fillStyle = skin.horn;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
+    const bx = (-2.2 + i * 1.15) * u;
+    const by = -1.7 * u + Math.abs(i - 1.5) * 0.22 * u;
     ctx.beginPath();
-    ctx.moveTo((-1.6 + i * 1.3) * u, -1.8 * u);
-    ctx.lineTo((-1.1 + i * 1.3) * u, -2.9 * u);
-    ctx.lineTo((-0.6 + i * 1.3) * u, -1.8 * u);
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + 0.42 * u, by - (1.15 - Math.abs(i - 1.5) * 0.22) * u);
+    ctx.lineTo(bx + 0.85 * u, by);
     ctx.closePath();
     ctx.fill();
   }
 
-  // ── 목 + 머리
-  px(ctx, 1.4 * u, -3.4 * u, 1.5 * u, 2.2 * u, skin.body);
-  px(ctx, 2.2 * u, -5 * u, 3.4 * u, 2.2 * u, skin.body);
-  px(ctx, 4.6 * u, -4.2 * u, 1.6 * u, 1.1 * u, skin.body); // 주둥이
-  px(ctx, 4.4 * u, -3.3 * u, 1.4 * u, 0.4 * u, skin.belly); // 턱
-  // 뿔
+  // ── 목 (S자로 굽는다)
+  const neckSway = flap * 0.18;
+  ctx.beginPath();
+  ctx.moveTo(1.6 * u, -0.8 * u);
+  ctx.bezierCurveTo(3.2 * u, (-1.6 + neckSway) * u, 3.0 * u, (-3.8 + neckSway) * u, 4.3 * u, (-4.4 + neckSway) * u);
+  ctx.lineWidth = u * 1.5;
+  ctx.strokeStyle = skin.body;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.lineWidth = u * 0.6;
+  ctx.strokeStyle = light;
+  ctx.stroke();
+
+  // ── 머리
+  ctx.save();
+  ctx.translate(4.5 * u, (-4.6 + neckSway) * u);
+  ctx.rotate(-0.12 + neckSway * 0.2);
+  // 두개골
+  ctx.beginPath();
+  ctx.moveTo(-1.1 * u, 0.5 * u);
+  ctx.quadraticCurveTo(-1.3 * u, -1.1 * u, 0.4 * u, -1.2 * u);
+  ctx.quadraticCurveTo(2.4 * u, -1.2 * u, 3.0 * u, -0.1 * u); // 주둥이 위
+  ctx.lineTo(2.9 * u, 0.55 * u); // 코끝
+  ctx.quadraticCurveTo(1.6 * u, 0.95 * u, 0.2 * u, 1.0 * u);
+  ctx.closePath();
+  ctx.fillStyle = skin.body;
+  ctx.fill();
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(0.8, u * 0.15);
+  ctx.stroke();
+  // 아래턱 — 불 뿜을 때 벌어진다
+  const jaw = 0.25 + breath * 0.85;
+  ctx.save();
+  ctx.translate(0.3 * u, 0.8 * u);
+  ctx.rotate(jaw * 0.5);
+  ctx.beginPath();
+  ctx.moveTo(0, -0.25 * u);
+  ctx.lineTo(2.5 * u, -0.1 * u);
+  ctx.lineTo(2.3 * u, 0.5 * u);
+  ctx.quadraticCurveTo(1.1 * u, 0.7 * u, 0, 0.45 * u);
+  ctx.closePath();
+  ctx.fillStyle = dark;
+  ctx.fill();
+  // 아랫니
   ctx.fillStyle = skin.horn;
+  for (let i = 0; i < 3; i++) {
+    const tx = (0.7 + i * 0.65) * u;
+    ctx.beginPath();
+    ctx.moveTo(tx, -0.15 * u);
+    ctx.lineTo(tx + 0.24 * u, -0.75 * u);
+    ctx.lineTo(tx + 0.46 * u, -0.15 * u);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  // 윗니
+  ctx.fillStyle = skin.horn;
+  for (let i = 0; i < 3; i++) {
+    const tx = (0.9 + i * 0.65) * u;
+    ctx.beginPath();
+    ctx.moveTo(tx, 0.85 * u);
+    ctx.lineTo(tx + 0.24 * u, 1.5 * u);
+    ctx.lineTo(tx + 0.46 * u, 0.85 * u);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // 뿔 — 뒤로 휘어진다
+  ctx.strokeStyle = skin.horn;
+  ctx.lineWidth = u * 0.5;
+  ctx.lineCap = 'round';
+  // 뒤로 낮게 뻗는다 — 위로 곧게 세우면 더듬이처럼 보인다
+  for (const [ox, oy, dx, dy] of [
+    [-0.5, -0.85, -1.5, -0.75],
+    [0.2, -1.05, -1.0, -1.15],
+  ]) {
+    ctx.beginPath();
+    ctx.moveTo(ox * u, oy * u);
+    ctx.quadraticCurveTo((ox + dx * 0.5) * u, (oy + dy * 0.8) * u, (ox + dx) * u, (oy + dy) * u);
+    ctx.stroke();
+  }
+  // 눈 — 세로 동공
   ctx.beginPath();
-  ctx.moveTo(2.6 * u, -5 * u);
-  ctx.lineTo(2.0 * u, -6.6 * u);
-  ctx.lineTo(3.3 * u, -5 * u);
-  ctx.closePath();
+  ctx.ellipse(1.0 * u, -0.25 * u, 0.5 * u, 0.36 * u, 0, 0, Math.PI * 2);
+  ctx.fillStyle = skin.eye;
   ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(3.6 * u, -5 * u);
-  ctx.lineTo(3.4 * u, -6.3 * u);
-  ctx.lineTo(4.3 * u, -5 * u);
-  ctx.closePath();
+  ctx.ellipse(1.05 * u, -0.25 * u, 0.12 * u, 0.3 * u, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a0f0f';
   ctx.fill();
-  // 눈
-  px(ctx, 3.9 * u, -4.4 * u, 0.9 * u, 0.8 * u, skin.eye);
-  px(ctx, 4.2 * u, -4.2 * u, 0.4 * u, 0.5 * u, '#2b1a1a');
+  // 콧구멍
+  ctx.beginPath();
+  ctx.ellipse(2.6 * u, 0.1 * u, 0.14 * u, 0.1 * u, 0, 0, Math.PI * 2);
+  ctx.fillStyle = dark;
+  ctx.fill();
+  ctx.restore();
 
   ctx.restore();
 
-  // ── 불 뿜기 (몸통과 별개로 월드 방향 기준으로 그린다)
+  // ── 불 뿜기 — 월드 방향 기준. 세 겹으로 겹쳐 깊이를 준다
   if (breath > 0) {
-    const len = size * (1.6 + breath * 2.2);
-    const spread = 0.42;
+    const len = size * (1.4 + breath * 2.4);
+    const mouth = { x: cx + facing * size * 0.62, y: cy - size * 0.55 - bob };
     ctx.save();
-    ctx.translate(cx + Math.cos(breathAngle) * size * 0.5, cy - size * 0.42 + Math.sin(breathAngle) * size * 0.3);
+    ctx.translate(mouth.x, mouth.y);
     ctx.rotate(breathAngle);
-    // 바깥 화염
-    ctx.globalAlpha = 0.55 + Math.sin(anim) * 0.1;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, len, -spread, spread);
-    ctx.closePath();
-    ctx.fillStyle = skin.fire[0];
-    ctx.fill();
-    // 안쪽 화염
-    ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, len * 0.62, -spread * 0.6, spread * 0.6);
-    ctx.closePath();
+    const cone = (r: number, spread: number, color: string, alpha: number) => {
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, r, -spread, spread);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    };
+    const flicker = 1 + Math.sin(anim * 0.9) * 0.06;
+    cone(len * flicker, 0.44, skin.fire[0], 0.45);
+    cone(len * 0.72 * flicker, 0.3, skin.fire[0], 0.7);
+    cone(len * 0.42 * flicker, 0.18, skin.fire[1], 0.95);
+    // 불똥
+    ctx.globalAlpha = 0.8;
     ctx.fillStyle = skin.fire[1];
-    ctx.fill();
+    for (let i = 0; i < 6; i++) {
+      const d = len * (0.3 + ((i * 137 + anim * 7) % 100) / 140);
+      const a = (((i * 71 + anim * 3) % 100) / 100 - 0.5) * 0.7;
+      ctx.fillRect(Math.cos(a) * d, Math.sin(a) * d, size * 0.05, size * 0.05);
+    }
     ctx.restore();
   }
 
   if (colorSafe) {
     ctx.strokeStyle = 'rgba(255,255,255,0.95)';
     ctx.lineWidth = Math.max(2, u * 0.5);
-    ctx.strokeRect(cx - size * 0.6, cy - size * 0.78, size * 1.2, size * 1.4);
+    ctx.strokeRect(cx - size * 0.7, cy - size * 0.9, size * 1.4, size * 1.6);
   }
   if (flash) {
     ctx.save();
-    ctx.globalAlpha = 0.7;
+    ctx.globalAlpha = 0.65;
     ctx.fillStyle = '#fff';
-    ctx.fillRect(cx - size * 0.65, cy - size * 0.8, size * 1.3, size * 1.5);
+    ctx.fillRect(cx - size * 0.75, cy - size * 0.95, size * 1.5, size * 1.7);
     ctx.restore();
   }
 }
