@@ -3,6 +3,14 @@
   "name": "elementary-math-warrior",
   "compatibility_date": "2026-08-06",
 
+  // 배포 전에 여기서 직접 빌드한다.
+  // Cloudflare Workers Builds 는 Deploy command(`npx wrangler deploy`)만 실행하고
+  // 빌드 단계를 따로 돌리지 않는 설정일 수 있다. 그 경우 dist/ 가 없어 배포가 실패한다.
+  // 빌드를 wrangler 설정에 넣어두면 대시보드 설정과 무관하게 항상 산출물이 만들어진다.
+  "build": {
+    "command": "npm run build"
+  },
+
   // 정적 자산만 배포한다(Worker 스크립트 없음).
   // `main` 을 두지 않으면 assets-only Worker 로 배포된다.
   "assets": {
