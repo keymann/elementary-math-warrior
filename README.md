@@ -7,7 +7,7 @@
 
 ## 현재 상태
 
-**Phase 5 — 메타 · UI**. 랭킹·PWA는 Phase 6.
+**Phase 6 — 백엔드 · PWA**. 밸런싱·QA는 Phase 7.
 
 ```bash
 npm install
@@ -51,7 +51,29 @@ npm run deploy     # 빌드 후 wrangler deploy
 | `src/game/boss.ts` | 보스 3종 + 최종보스 방어막 |
 | `src/game/pickups.ts` | 특수 아이템 — 생선·자석·폭탄 |
 | `src/ui/screens.ts` | 시작 · 게임 방법 · 도감 · 일시정지 · 결과 화면 |
-| `src/meta/save.ts` | 최고 기록 · 이어하기 (localStorage) |
+| `src/meta/save.ts` | 최고 기록 · 이어하기 · 별명 (localStorage) |
+| `src/worker/index.ts` | Cloudflare Worker — 정적 자산 + 랭킹 API + 점수 검증 |
+| `src/net/leaderboard.ts` | 랭킹 클라이언트 (실패해도 게임을 막지 않음) |
+| `migrations/0001_init.sql` | D1 스키마 |
+
+### 랭킹 서버 최초 1회 설정
+
+`wrangler.jsonc` 의 `d1_databases` 는 **주석 처리되어 있다.** 존재하지 않는 database_id 로
+배포하면 런타임에 조용히 깨지기 때문이다. 이 상태에서도 게임은 정상 동작하고 랭킹 API 만
+503 을 돌려준다.
+
+```bash
+npx wrangler d1 create elementary-math-warrior          # 출력된 UUID 를 복사
+# wrangler.jsonc 의 d1_databases 주석을 풀고 database_id 에 붙여넣기
+npx wrangler d1 migrations apply elementary-math-warrior --remote
+```
+
+로컬 확인:
+
+```bash
+npx wrangler d1 execute elementary-math-warrior --local --file=migrations/0001_init.sql
+npx wrangler dev        # http://localhost:8787
+```
 
 ### 10분 타임라인
 

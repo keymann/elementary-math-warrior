@@ -11,9 +11,11 @@ import { PASSIVE_BY_ID } from '../game/stats';
 import { STARTER_WEAPONS, WEAPON_BY_ID, type WeaponId } from '../game/weapons';
 import type { Grade } from '../quiz/selector';
 import { PICKUP_EMOJI } from '../game/pickups';
+import { fetchRanking, type RankRow } from '../net/leaderboard';
+import type { Identity } from '../meta/save';
 
 export type StartResult =
-  | { action: 'new'; grade: Grade; starter: WeaponId }
+  | { action: 'new'; grade: Grade; starter: WeaponId; identity: Identity }
   | { action: 'resume' };
 
 const GRADE_UNITS: Record<Grade, string> = {
@@ -29,6 +31,17 @@ const WEAPON_TAG: Partial<Record<WeaponId, string>> = {
   각도기: '광역형',
   계산기: '폭발형',
 };
+
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+const escapeAttr = escapeHtml;
+
+/** 시작 화면의 입력값을 읽어 정리한다 */
+function readIdentity(root: HTMLElement): Identity {
+  const name = (root.querySelector('.name') as HTMLInputElement | null)?.value.trim() ?? '';
+  const classCode = (root.querySelector('.cls') as HTMLInputElement | null)?.value.trim() ?? '';
+  return { name: name.slice(0, 12), classCode: classCode.slice(0, 12) };
+}
 
 function el(html: string): HTMLElement {
   const d = document.createElement('div');
@@ -63,6 +76,7 @@ export class Screens {
     starter: WeaponId;
     best: number | undefined;
     canResume: boolean;
+    identity: Identity;
   }): Promise<StartResult> {
     return new Promise((resolve) => {
       let grade = opts.grade;
@@ -103,6 +117,17 @@ export class Screens {
             </div>
           </div>
 
+          <div class="section">
+            <div class="label">🏅 명예의 전당에 올리려면 (선택)</div>
+            <div class="idrow">
+              <input class="txt name" maxlength="12" placeholder="별명 (예: 용사수달)"
+                     value="${escapeAttr(opts.identity.name)}" aria-label="별명" />
+              <input class="txt cls" maxlength="12" placeholder="학급 코드 (예: 용사41)"
+                     value="${escapeAttr(opts.identity.classCode)}" aria-label="학급 코드" />
+            </div>
+            <div class="note">💡 <b>실명 대신 별명</b>을 써 주세요. 학급 코드를 넣으면 우리 반끼리 순위를 볼 수 있어요.</div>
+          </div>
+
           <div class="best">🏆 ${grade}학년 최고 점수: <b class="bestval">${opts.best ?? '-'}</b></div>
 
           <div class="actions">
@@ -112,6 +137,7 @@ export class Screens {
           <div class="actions small">
             <button class="ghost how">❓ 게임 방법</button>
             <button class="ghost dex">✨ 각성 도감</button>
+            <button class="ghost hall">🏆 전당</button>
           </div>
         </div>`);
 
@@ -133,7 +159,7 @@ export class Screens {
           b.classList.add('on');
         } else if (b.classList.contains('go')) {
           this.hide();
-          resolve({ action: 'new', grade, starter });
+          resolve({ action: 'new', grade, starter, identity: readIdentity(node) });
         } else if (b.classList.contains('resume')) {
           this.hide();
           resolve({ action: 'resume' });
@@ -141,6 +167,11 @@ export class Screens {
           this.how(() => this.start(opts).then(resolve));
         } else if (b.classList.contains('dex')) {
           this.dex(() => this.start(opts).then(resolve));
+        } else if (b.classList.contains('hall')) {
+          const id = readIdentity(node);
+          void this.hall(grade, id.classCode, () =>
+            this.start({ ...opts, identity: id }).then(resolve),
+          );
         }
       });
 
@@ -201,6 +232,45 @@ export class Screens {
     this.show(node);
   }
 
+  /* ─────────────── 명예의 전당 ─────────────── */
+
+  async hall(grade: Grade, classCode: string, onClose: () => void) {
+    const node = el(`
+      <div class="screen sheet">
+        <h2>🏆 명예의 전당</h2>
+        <p class="sub">${grade}학년 ${classCode ? `· 학급 <b>${escapeHtml(classCode)}</b>` : '· 전체'}</p>
+        <div class="hall-status">불러오는 중…</div>
+        <ol class="hall-list"></ol>
+        <button class="primary close">닫기</button>
+      </div>`);
+    node.querySelector('.close')!.addEventListener('click', onClose);
+    this.show(node);
+
+    const status = node.querySelector('.hall-status') as HTMLElement;
+    const list = node.querySelector('.hall-list') as HTMLElement;
+    const res = await fetchRanking(grade, classCode || null);
+
+    if (!res.ok) {
+      status.textContent = res.reason;
+      return;
+    }
+    if (!res.rows.length) {
+      status.textContent = '아직 기록이 없어요. 첫 기록의 주인공이 되어 보세요!';
+      return;
+    }
+    status.remove();
+    list.innerHTML = res.rows.map((r: RankRow) => {
+      const sec = Math.floor(r.surviveMs / 1000);
+      const medal = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : `${r.rank}`;
+      return `<li>
+        <span class="rk">${medal}</span>
+        <span class="nm">${escapeHtml(r.name)}${r.cleared ? ' 🏆' : ''}</span>
+        <span class="dt">${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')} · Lv.${r.level} · 📝${r.accuracy}%</span>
+        <span class="sc">${r.score}</span>
+      </li>`;
+    }).join('');
+  }
+
   /* ─────────────── 일시정지 ─────────────── */
 
   pause(info: {
@@ -257,6 +327,8 @@ export class Screens {
     stars: number;
     title: string;
     newBest: boolean;
+    /** 랭킹 제출 결과 한 줄 (없으면 표시하지 않음) */
+    rankLine?: string | null;
   }): Promise<'retry' | 'home'> {
     return new Promise((resolve) => {
       const t = Math.floor(info.time);
@@ -275,6 +347,7 @@ export class Screens {
           </div>
           <div class="score">점수 <b>${info.score}</b></div>
           ${info.newBest ? '<div class="newbest">🎊 신기록 달성!</div>' : ''}
+          ${info.rankLine ? `<div class="rankline">${escapeHtml(info.rankLine)}</div>` : ''}
           <button class="primary retry">다시 도전!</button>
           <button class="ghost home">처음으로</button>
         </div>`);

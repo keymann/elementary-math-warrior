@@ -25,8 +25,12 @@ import { QuizSelector, type Grade } from './quiz/selector';
 import { CardOverlay, QuizOverlay, showAwaken } from './ui/overlays';
 import { Hud } from './ui/hud';
 import { Screens } from './ui/screens';
+import { submitScore } from './net/leaderboard';
 import {
   clearRun,
+  loadIdentity,
+  saveIdentity,
+  type Identity,
   computeScore,
   loadBest,
   loadRun,
@@ -55,6 +59,7 @@ screens.bestOf = (g) => loadBest()[g];
 let grade: Grade = 4;
 let starter: WeaponId = STARTER_WEAPONS[0];
 let seed = 20260806;
+let identity: Identity = loadIdentity();
 
 const world = new World(seed, starter);
 let selector = new QuizSelector(grade, makeRng(seed));
@@ -236,10 +241,17 @@ async function goHome() {
     starter,
     best: loadBest()[grade],
     canResume: !!saved,
+    identity,
   });
-  if (r.action === 'resume' && saved) resumeRun(saved);
-  else if (r.action === 'new') startRun(r.grade, r.starter);
-  else startRun(grade, starter);
+  if (r.action === 'resume' && saved) {
+    resumeRun(saved);
+  } else if (r.action === 'new') {
+    identity = r.identity;
+    saveIdentity(identity);
+    startRun(r.grade, r.starter);
+  } else {
+    startRun(grade, starter);
+  }
 }
 
 function startRun(g: Grade, w: WeaponId) {
@@ -326,6 +338,22 @@ async function showResult(reason: 'dead' | 'cleared') {
   const score = computeScore(world.time, world.kills, world.player.level, selector.accuracy);
   const newBest = saveBest(grade, score);
 
+  // 랭킹 제출은 **실패해도 게임 흐름을 막지 않는다**. 별명이 없으면 아예 보내지 않는다.
+  let rankLine: string | null = null;
+  if (identity.name) {
+    const res = await submitScore({
+      name: identity.name,
+      classCode: identity.classCode || null,
+      grade,
+      surviveMs: Math.round(world.time * 1000),
+      kills: world.kills,
+      level: world.player.level,
+      accuracy: selector.accuracy,
+      cleared,
+    });
+    rankLine = res.ok ? `🏅 ${identity.classCode ? '우리 반' : '전체'} ${res.rank}위!` : res.reason;
+  }
+
   const r = await screens.result({
     cleared,
     time: world.time,
@@ -336,6 +364,7 @@ async function showResult(reason: 'dead' | 'cleared') {
     stars: starsFor(world.time, cleared),
     title: titleFor(selector.accuracy),
     newBest,
+    rankLine,
   });
   if (r === 'retry') startRun(grade, starter);
   else void goHome();
