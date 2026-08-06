@@ -1,3 +1,5 @@
+import type { DragonSkin } from '../game/boss';
+
 /**
  * 캐릭터 렌더 — 복셀(블록) 스타일의 **자체 디자인**.
  *
@@ -341,91 +343,146 @@ function paintCreature(ctx: CanvasRenderingContext2D, id: CreatureId, size: numb
 
 export function drawBoss(
   ctx: CanvasRenderingContext2D,
-  id: 'mid1' | 'mid2' | 'final',
+  skin: DragonSkin,
   cx: number,
   cy: number,
   size: number,
-  t: number,
+  /** 이동 거리 누적 — 걷기·날갯짓 위상 */
+  anim: number,
+  facing: number,
+  /** 불 뿜는 중이면 0~1 진행도, 아니면 0 */
+  breath: number,
+  breathAngle: number,
   flash: boolean,
   colorSafe = false,
 ) {
   const u = size / 8;
-  const b = Math.sin(t * 3);
-  ctx.save();
-  ctx.translate(cx, cy);
+  // 걷기는 이동 거리에, 날갯짓은 그보다 빠르게 — 두 모션의 주기를 다르게 둔다
+  const step = Math.sin(anim / 9);
+  const flap = Math.sin(anim / 5.5);
+  const bob = Math.abs(flap) * u * 0.35;
 
+  ctx.save();
+  ctx.translate(cx, cy - bob);
+  if (facing < 0) ctx.scale(-1, 1);
+
+  // 그림자
   ctx.globalAlpha = 0.3;
   ctx.beginPath();
-  ctx.ellipse(0, size * 0.5, size * 0.42, size * 0.14, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, size * 0.52 + bob, size * 0.42, size * 0.13, 0, 0, Math.PI * 2);
   ctx.fillStyle = '#000';
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  if (id === 'mid1') {
-    // 곱셈 골렘 — 커다란 돌덩이, 가슴에 × 표식
-    px(ctx, -3.6 * u, -3.6 * u + b * 0.2 * u, 7.2 * u, 7 * u, '#6f6f6f');
-    px(ctx, -3.6 * u, -3.6 * u + b * 0.2 * u, 7.2 * u, 1.4 * u, '#8e8e8e');
-    px(ctx, -2.4 * u, -2 * u, 1.4 * u, 1.4 * u, '#ff8a5c');
-    px(ctx, 1 * u, -2 * u, 1.4 * u, 1.4 * u, '#ff8a5c');
-    ctx.strokeStyle = '#ffd54a';
-    ctx.lineWidth = u * 0.7;
+  // ── 날개 (몸통 뒤) — 위아래로 퍼덕인다
+  const wingLift = flap * 1.6;
+  const drawWing = (dir: number) => {
     ctx.beginPath();
-    ctx.moveTo(-1.4 * u, 0.6 * u);
-    ctx.lineTo(1.4 * u, 2.6 * u);
-    ctx.moveTo(1.4 * u, 0.6 * u);
-    ctx.lineTo(-1.4 * u, 2.6 * u);
+    ctx.moveTo(dir * 1.4 * u, -1.6 * u);
+    ctx.lineTo(dir * 5.6 * u, (-3.4 + wingLift) * u);
+    ctx.lineTo(dir * 6.2 * u, (-0.4 + wingLift * 0.6) * u);
+    ctx.lineTo(dir * 4.2 * u, (0.8 + wingLift * 0.3) * u);
+    ctx.closePath();
+    ctx.fillStyle = skin.wing;
+    ctx.fill();
+    ctx.strokeStyle = skin.wingEdge;
+    ctx.lineWidth = Math.max(1, u * 0.28);
     ctx.stroke();
-  } else if (id === 'mid2') {
-    // 나눗셈 마녀 — 뾰족 모자, 가슴에 ÷ 표식
-    px(ctx, -2.6 * u, -2.2 * u, 5.2 * u, 5.4 * u, '#5b4b8a');
+  };
+  drawWing(-1);
+  drawWing(1);
+
+  // ── 꼬리
+  ctx.beginPath();
+  ctx.moveTo(-1.6 * u, 1.4 * u);
+  ctx.quadraticCurveTo(-5 * u, (2.2 + step * 0.8) * u, -6.4 * u, (0.6 + step * 1.2) * u);
+  ctx.lineWidth = u * 1.1;
+  ctx.strokeStyle = skin.body;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // ── 다리 (걷기: 앞뒤 교차)
+  const legs = step * u * 1.2;
+  px(ctx, -1.9 * u + legs, 1.5 * u, 1.5 * u, 2.2 * u, skin.body);
+  px(ctx, 0.5 * u - legs, 1.5 * u, 1.5 * u, 2.2 * u, skin.body);
+  px(ctx, -2.1 * u + legs, 3.3 * u, 1.9 * u, 0.7 * u, skin.horn);
+  px(ctx, 0.3 * u - legs, 3.3 * u, 1.9 * u, 0.7 * u, skin.horn);
+
+  // ── 몸통
+  px(ctx, -2.4 * u, -1.8 * u, 4.8 * u, 3.6 * u, skin.body);
+  px(ctx, -1.4 * u, -0.6 * u, 2.8 * u, 2.4 * u, skin.belly);
+  // 등 가시
+  ctx.fillStyle = skin.horn;
+  for (let i = 0; i < 3; i++) {
     ctx.beginPath();
-    ctx.moveTo(-3 * u, -2.2 * u);
-    ctx.lineTo(0, -6 * u + b * 0.3 * u);
-    ctx.lineTo(3 * u, -2.2 * u);
+    ctx.moveTo((-1.6 + i * 1.3) * u, -1.8 * u);
+    ctx.lineTo((-1.1 + i * 1.3) * u, -2.9 * u);
+    ctx.lineTo((-0.6 + i * 1.3) * u, -1.8 * u);
     ctx.closePath();
-    ctx.fillStyle = '#3d3260';
     ctx.fill();
-    px(ctx, -1.5 * u, -1.2 * u, 0.9 * u, 0.9 * u, '#ffe08a');
-    px(ctx, 0.6 * u, -1.2 * u, 0.9 * u, 0.9 * u, '#ffe08a');
-    px(ctx, -0.35 * u, 1 * u, 0.7 * u, 0.7 * u, '#fff');
-    px(ctx, -1.6 * u, 2 * u, 3.2 * u, 0.6 * u, '#fff');
-    px(ctx, -0.35 * u, 2.9 * u, 0.7 * u, 0.7 * u, '#fff');
-  } else {
-    // 유령 마왕 — 아래가 흩어지는 유령 형태 + 뿔
+  }
+
+  // ── 목 + 머리
+  px(ctx, 1.4 * u, -3.4 * u, 1.5 * u, 2.2 * u, skin.body);
+  px(ctx, 2.2 * u, -5 * u, 3.4 * u, 2.2 * u, skin.body);
+  px(ctx, 4.6 * u, -4.2 * u, 1.6 * u, 1.1 * u, skin.body); // 주둥이
+  px(ctx, 4.4 * u, -3.3 * u, 1.4 * u, 0.4 * u, skin.belly); // 턱
+  // 뿔
+  ctx.fillStyle = skin.horn;
+  ctx.beginPath();
+  ctx.moveTo(2.6 * u, -5 * u);
+  ctx.lineTo(2.0 * u, -6.6 * u);
+  ctx.lineTo(3.3 * u, -5 * u);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(3.6 * u, -5 * u);
+  ctx.lineTo(3.4 * u, -6.3 * u);
+  ctx.lineTo(4.3 * u, -5 * u);
+  ctx.closePath();
+  ctx.fill();
+  // 눈
+  px(ctx, 3.9 * u, -4.4 * u, 0.9 * u, 0.8 * u, skin.eye);
+  px(ctx, 4.2 * u, -4.2 * u, 0.4 * u, 0.5 * u, '#2b1a1a');
+
+  ctx.restore();
+
+  // ── 불 뿜기 (몸통과 별개로 월드 방향 기준으로 그린다)
+  if (breath > 0) {
+    const len = size * (1.6 + breath * 2.2);
+    const spread = 0.42;
+    ctx.save();
+    ctx.translate(cx + Math.cos(breathAngle) * size * 0.5, cy - size * 0.42 + Math.sin(breathAngle) * size * 0.3);
+    ctx.rotate(breathAngle);
+    // 바깥 화염
+    ctx.globalAlpha = 0.55 + Math.sin(anim) * 0.1;
     ctx.beginPath();
-    ctx.moveTo(-4 * u, 2.6 * u);
-    ctx.lineTo(-4 * u, -1.6 * u);
-    ctx.quadraticCurveTo(0, -6.4 * u, 4 * u, -1.6 * u);
-    ctx.lineTo(4 * u, 2.6 * u);
-    for (let i = 0; i < 4; i++) {
-      const x0 = 4 * u - i * 2 * u;
-      ctx.quadraticCurveTo(x0 - u, 3.6 * u + b * 0.3 * u, x0 - 2 * u, 2.6 * u);
-    }
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, len, -spread, spread);
     ctx.closePath();
-    ctx.fillStyle = '#6b4a9e';
+    ctx.fillStyle = skin.fire[0];
     ctx.fill();
+    // 안쪽 화염
+    ctx.globalAlpha = 0.85;
     ctx.beginPath();
-    ctx.moveTo(-3.4 * u, -3 * u);
-    ctx.lineTo(-4.6 * u, -5.4 * u);
-    ctx.lineTo(-2.2 * u, -4.2 * u);
-    ctx.moveTo(3.4 * u, -3 * u);
-    ctx.lineTo(4.6 * u, -5.4 * u);
-    ctx.lineTo(2.2 * u, -4.2 * u);
-    ctx.fillStyle = '#4a3270';
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, len * 0.62, -spread * 0.6, spread * 0.6);
+    ctx.closePath();
+    ctx.fillStyle = skin.fire[1];
     ctx.fill();
-    px(ctx, -2.2 * u, -2 * u, 1.5 * u, 1.5 * u, '#ff5c5c');
-    px(ctx, 0.7 * u, -2 * u, 1.5 * u, 1.5 * u, '#ff5c5c');
+    ctx.restore();
   }
 
   if (colorSafe) {
     ctx.strokeStyle = 'rgba(255,255,255,0.95)';
     ctx.lineWidth = Math.max(2, u * 0.5);
-    ctx.strokeRect(-size * 0.55, -size * 0.62, size * 1.1, size * 1.24);
+    ctx.strokeRect(cx - size * 0.6, cy - size * 0.78, size * 1.2, size * 1.4);
   }
   if (flash) {
+    ctx.save();
     ctx.globalAlpha = 0.7;
     ctx.fillStyle = '#fff';
-    ctx.fillRect(-size * 0.6, -size * 0.7, size * 1.2, size * 1.4);
+    ctx.fillRect(cx - size * 0.65, cy - size * 0.8, size * 1.3, size * 1.5);
+    ctx.restore();
   }
-  ctx.restore();
 }

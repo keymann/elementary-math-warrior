@@ -69,6 +69,8 @@ let identity: Identity = loadIdentity();
 
 const world = new World(seed, starter);
 let selector = new QuizSelector(grade, makeRng(seed));
+// 히든 보스는 정답률이 아주 높을 때만 열린다
+world.accuracyProvider = () => selector.accuracy;
 
 let stats: LoopStats = { fps: 0, frameMs: 0, droppedFrames: 0 };
 let lowPerf = false;
@@ -124,6 +126,9 @@ world.on((e: RunEvent) => {
       break;
     case 'shield':
       void runShieldFlow();
+      break;
+    case 'hidden':
+      banner = { text: '🐉 칠흑의 드래곤이 나타났다!', until: world.time + 3 };
       break;
     case 'bonus':
       void runBonusFlow();
@@ -493,7 +498,8 @@ function render(alpha: number) {
     const bx = vp.toScreenX(b.px + (b.x - b.px) * alpha);
     const by = vp.toScreenY(b.py + (b.y - b.py) * alpha);
     const br = b.def.radius * S;
-    drawBoss(ctx, b.def.id, bx, by, br * 1.9, world.time, b.flash > 0, cs);
+    const breathT = b.breathing > 0 ? 1 - b.breathing / b.def.breathTime : 0;
+    drawBoss(ctx, b.def.skin, bx, by, br * 1.7, b.anim, b.facing, breathT, b.breathAngle, b.flash > 0, cs);
     if (b.shielded) {
       ring(ctx, bx, by, br * 1.25, 'rgba(120,200,255,0.9)', Math.max(3, 5 * S));
       ring(ctx, bx, by, br * 1.45, 'rgba(120,200,255,0.4)', Math.max(2, 3 * S));
@@ -577,6 +583,7 @@ declare global {
       skipTo: (t: number) => void;
       boss: () => { name: string; hp: number; maxHp: number; shielded: boolean } | null;
       timeFrozen: () => boolean;
+      defeatBoss: () => void;
       events: () => string[];
       mode: () => string;
       /** 테스트용 — 시작 화면을 건너뛰고 바로 시작 */
@@ -646,6 +653,7 @@ window.__engine = {
         }
       : null,
   timeFrozen: () => world.timeFrozen,
+  defeatBoss: () => world.defeatBoss(),
   events: () => eventLog.slice(),
   mode: () => mode,
   begin: (g = grade, w = starter) => {

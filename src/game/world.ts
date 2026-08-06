@@ -21,7 +21,7 @@ import { STARTER_WEAPONS, WEAPON_BY_ID, type FireContext, type WeaponId } from '
 import { rollUpgrades, type Upgrade } from './upgrades';
 import { findEvolutions, type Evolution } from './evolution';
 import { Director, type TimelineEvent } from './director';
-import { BOSSES, makeBoss, type Boss, type BossKindId } from './boss';
+import { BOSSES, HIDDEN_ACCURACY, makeBoss, type Boss, type BossKindId } from './boss';
 import { makePickupPool, type Pickup, type PickupKind } from './pickups';
 import { biomeAt } from '../render/terrain';
 
@@ -76,6 +76,8 @@ export type RunEvent =
   | { type: 'bossflee'; id: BossKindId }
   /** 최종보스 방어막 — 문제를 맞혀야 깨진다 */
   | { type: 'shield' }
+  /** 히든 보스 등장 */
+  | { type: 'hidden' }
   | { type: 'pickup'; kind: PickupKind }
   | { type: 'gameover'; reason: 'dead' | 'cleared' };
 
@@ -105,6 +107,11 @@ export class World {
   timeFrozen = false;
   /** 보스전 경과 시간 — 교착 방지용 */
   private bossElapsed = 0;
+  /**
+   * 히든 보스 개방 조건 — 바깥(main)이 정답률을 넘겨준다.
+   * 문제를 잘 푼 학생에게 더 큰 무대를 주는 것이 이 게임의 방향이다.
+   */
+  accuracyProvider: (() => number | null) | null = null;
   transcended = false;
 
   private director = new Director();
@@ -300,7 +307,7 @@ export class World {
     this.spawnOne(kind, this.rng() * Math.PI * 2, B.spawn.ringMin * 0.85);
   }
 
-  private spawnBoss(id: BossKindId) {
+  spawnBoss(id: BossKindId) {
     const def = BOSSES[id];
     const b = this.boss;
     const a = this.rng() * Math.PI * 2;
@@ -317,6 +324,11 @@ export class World {
     b.shielded = false;
     b.lastPid = 0;
     b.lastHitAt = -99;
+    b.anim = 0;
+    b.facing = 1;
+    b.breathCd = def.breathEvery * 0.6; // 등장 직후 바로 뿜지는 않는다
+    b.breathing = 0;
+    b.breathAngle = 0;
 
     this.timeFrozen = true; // 보스전 동안 타이머 정지
     this.emit({ type: 'boss', id, name: def.name });
@@ -504,6 +516,15 @@ export class World {
     }
   }
 
+  /** 테스트용 — 보스를 즉시 처치한다 */
+  defeatBoss() {
+    if (this.boss.active) {
+      this.boss.hp = 0;
+      this.boss.shielded = false;
+      this.killBoss();
+    }
+  }
+
   /** 방어막 해제 — 문제를 맞혔을 때 바깥에서 호출 */
   breakShield() {
     this.boss.shielded = false;
@@ -520,6 +541,15 @@ export class World {
     this.emit({ type: 'bossdown', id: b.def.id });
 
     if (b.def.id === 'final') {
+      const acc = this.accuracyProvider?.() ?? 0;
+      if ((acc ?? 0) >= HIDDEN_ACCURACY) {
+        this.emit({ type: 'hidden' });
+        this.spawnBoss('hidden');
+        return;
+      }
+      this.over = 'cleared';
+      this.emit({ type: 'gameover', reason: 'cleared' });
+    } else if (b.def.id === 'hidden') {
       this.over = 'cleared';
       this.emit({ type: 'gameover', reason: 'cleared' });
     }
@@ -620,8 +650,36 @@ export class World {
     const dx = p.x - b.x;
     const dy = p.y - b.y;
     const d = Math.hypot(dx, dy) || 1;
-    b.x += (dx / d) * b.def.speed * dt;
-    b.y += (dy / d) * b.def.speed * dt;
+
+    // 불 뿜는 동안에는 제자리에 선다 — 예고 동작이 있어야 피할 수 있다
+    if (b.breathing <= 0) {
+      b.x += (dx / d) * b.def.speed * dt;
+      b.y += (dy / d) * b.def.speed * dt;
+      if (Math.abs(dx) > 1) b.facing = dx > 0 ? 1 : -1;
+    }
+    b.anim += Math.hypot(b.x - b.px, b.y - b.py) + dt * 12; // 멈춰 있어도 날개는 친다
+
+    // ── 불 뿜기
+    if (b.breathing > 0) {
+      b.breathing -= dt;
+      // 화염 원뿔 안에 있으면 지속 피해
+      const ang = Math.atan2(dy, dx);
+      let diff = Math.abs(((ang - b.breathAngle + Math.PI) % (Math.PI * 2)) - Math.PI);
+      if (d < b.def.breathRange && diff < 0.42) {
+        p.hp = Math.max(0, p.hp - b.def.breathDps * dt);
+        if (p.hp <= 0) {
+          this.over = 'dead';
+          this.emit({ type: 'gameover', reason: 'dead' });
+        }
+      }
+    } else {
+      b.breathCd -= dt;
+      if (b.breathCd <= 0) {
+        b.breathCd = b.def.breathEvery;
+        b.breathing = b.def.breathTime;
+        b.breathAngle = Math.atan2(dy, dx); // 시작 시점 방향으로 고정 — 옆으로 피할 수 있다
+      }
+    }
 
     if (p.invuln <= 0 && d < b.def.radius + B.player.radius) this.hurtPlayer(b.def.damage);
   }
