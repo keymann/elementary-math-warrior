@@ -38,6 +38,8 @@ export type Enemy = {
   kx: number;
   ky: number;
   flash: number;
+  /** 이동 거리 누적 — 애니메이션 위상. 걸을 때만 모션이 돈다 */
+  anim: number;
   lastPid: number;
   lastHitAt: number;
 };
@@ -63,7 +65,7 @@ export type Player = {
 export type RunEvent =
   | { type: 'levelup'; level: number }
   | { type: 'awaken'; evolution: Evolution }
-  /** 별 몬스터 처치 → 보너스 문제 */
+  /** 미믹 처치 → 보너스 문제 */
   | { type: 'bonus' }
   /** 초월 수련 — 특별 문제 3개 */
   | { type: 'trial' }
@@ -129,6 +131,7 @@ export class World {
         kx: 0,
         ky: 0,
         flash: 0,
+        anim: 0,
         lastPid: 0,
         lastHitAt: -99,
       }),
@@ -215,7 +218,7 @@ export class World {
         this.transcend();
         break;
       case 'star':
-        this.spawnSpecial('star');
+        this.spawnSpecial('mimic');
         break;
       case 'cat':
         this.spawnSpecial('cat');
@@ -285,12 +288,13 @@ export class World {
     e.kx = 0;
     e.ky = 0;
     e.flash = 0;
+    e.anim = 0;
     e.lastPid = 0;
     e.lastHitAt = -99;
     return e;
   }
 
-  private spawnSpecial(id: 'star' | 'cat') {
+  private spawnSpecial(id: 'mimic' | 'cat') {
     const kind = ENEMY_KINDS[kindIndex(id)];
     // 화면 밖에서 등장하되 너무 멀지 않게 — 놓치면 아깝다는 느낌이 있어야 한다
     this.spawnOne(kind, this.rng() * Math.PI * 2, B.spawn.ringMin * 0.85);
@@ -532,7 +536,7 @@ export class World {
     g.vy = 0;
     g.xp = kind.xp;
 
-    if (kind.id === 'star') this.emit({ type: 'bonus' });
+    if (kind.id === 'mimic') this.emit({ type: 'bonus' });
     else if (kind.id === 'cat') this.dropPickup('fish', e.x, e.y);
   }
 
@@ -586,6 +590,8 @@ export class World {
 
       e.x += (dx * kind.speed * enemyMod + sx * B.enemy.separation + e.kx) * dt;
       e.y += (dy * kind.speed * enemyMod + sy * B.enemy.separation + e.ky) * dt;
+      // 이동한 거리만큼 애니메이션을 돌린다 — 미믹 뚜껑은 움직일 때만 여닫힌다
+      e.anim += Math.hypot(e.x - e.px, e.y - e.py);
       e.kx *= damp;
       e.ky *= damp;
 

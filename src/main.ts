@@ -197,12 +197,12 @@ async function runLevelUpFlow() {
   });
 }
 
-/** 별 몬스터 보너스 문제 — 맞히면 맵 전체 자석 또는 폭탄이 떨어진다 */
+/** 미믹 보너스 문제 — 맞히면 맵 전체 자석 또는 폭탄이 떨어진다 */
 async function runBonusFlow() {
   await enqueue(async () => {
     const quiz = selector.next();
     if (!quiz) return;
-    const ok = await quizOverlay.ask(quiz, '⭐ 보너스 문제! 맞히면 특별 아이템');
+    const ok = await quizOverlay.ask(quiz, '🎁 미믹 보너스 문제! 맞히면 특별 아이템');
     selector.grade_(quiz, ok);
     if (!ok) return;
     const kind = Math.random() < 0.5 ? 'magnet' : 'bomb';
@@ -465,7 +465,7 @@ function render(alpha: number) {
       // 색약 모드: 색만으로 구분되지 않도록 테두리 두께를 종류별로 다르게 준다
       if (getSettings().colorSafe) ring(ctx, sx, sy, kind.radius * S, '#fff', 1 + (e.kind % 3));
     } else {
-      drawCreature(ctx, kind.id as CreatureId, sx, sy, kind.radius * 2.2 * S, world.time, e.flash > 0, vp.dpr, cs);
+      drawCreature(ctx, kind.id as CreatureId, sx, sy, kind.radius * 2.2 * S, e.anim, e.flash > 0, vp.dpr, cs);
     }
   });
 

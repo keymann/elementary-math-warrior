@@ -126,7 +126,7 @@ export function drawHero(
 
 /* ─────────────────────────── 적 ─────────────────────────── */
 
-export type CreatureId = 'basic' | 'swift' | 'tank' | 'swarm' | 'star' | 'cat';
+export type CreatureId = 'basic' | 'swift' | 'tank' | 'swarm' | 'mimic' | 'cat';
 
 /**
  * 자체 디자인 몬스터 6종.
@@ -144,7 +144,7 @@ const creatureCache = new Map<string, HTMLCanvasElement>();
  * 색만 다르면 적록색약 학생에게는 말랑이(빨강)와 꼬마 무리(연두)가 같은 색으로 보인다.
  * 테두리 굵기 + 머리 위 점 개수로 **색 없이도** 구분되게 한다.
  */
-const CS_PIPS: Record<CreatureId, number> = { basic: 1, swift: 2, swarm: 3, tank: 4, star: 5, cat: 6 };
+const CS_PIPS: Record<CreatureId, number> = { basic: 1, swift: 2, swarm: 3, tank: 4, mimic: 5, cat: 6 };
 
 function creatureSprite(
   id: CreatureId,
@@ -186,19 +186,23 @@ function paintColorSafeMarks(ctx: CanvasRenderingContext2D, id: CreatureId, size
   ctx.restore();
 }
 
+/** 애니메이션 한 프레임에 해당하는 이동 거리(월드 단위) */
+const ANIM_STEP = 13;
+
 export function drawCreature(
   ctx: CanvasRenderingContext2D,
   id: CreatureId,
   cx: number,
   cy: number,
   size: number,
-  t: number,
+  /** 이동 거리 누적값 — 움직일 때만 모션이 돈다 */
+  anim: number,
   flash: boolean,
   dpr = 1,
   colorSafe = false,
 ) {
   // 개체마다 위상을 어긋나게 해 무리가 한 몸처럼 움직이지 않게 한다
-  const phase = Math.floor((t * 4 + cx * 0.02 + cy * 0.013) % FRAMES + FRAMES) % FRAMES;
+  const phase = Math.floor((anim / ANIM_STEP + cx * 0.017 + cy * 0.011) % FRAMES + FRAMES) % FRAMES;
   const sp = creatureSprite(id, size, dpr, phase, colorSafe);
   const w = sp.width / dpr;
   const h = sp.height / dpr;
@@ -268,23 +272,54 @@ function paintCreature(ctx: CanvasRenderingContext2D, id: CreatureId, size: numb
       px(ctx, -1.6 * u, 0.9 * u + s * u, 3.2 * u, 0.6 * u, '#4f4f4f');
       break;
     }
-    case 'star': {
-      // 별 정령 — 회전하며 반짝인다
-      ctx.rotate(phase);
-      ctx.beginPath();
-      for (let i = 0; i < 10; i++) {
-        const r = i % 2 === 0 ? size * 0.5 : size * 0.22;
-        const a = (Math.PI / 5) * i - Math.PI / 2;
-        const fx = Math.cos(a) * r;
-        const fy = Math.sin(a) * r;
-        i === 0 ? ctx.moveTo(fx, fy) : ctx.lineTo(fx, fy);
+    case 'mimic': {
+      // 미믹 — 보물상자인 척한다. 움직일 때마다 뚜껑이 열렸다 닫힌다.
+      // phase 0 → 닫힘, phase π → 활짝. sin 을 0~1 로 접어 여닫이를 만든다
+      const open = (Math.sin(phase) + 1) / 2; // 0~1
+      const lid = open * 1.5; // 뚜껑이 젖혀지는 정도
+
+      // 상자 몸통
+      px(ctx, -2.8 * u, -0.6 * u, 5.6 * u, 3.2 * u, '#8a5a2b');
+      px(ctx, -2.8 * u, -0.6 * u, 5.6 * u, 0.5 * u, '#a56d34'); // 윗면 하이라이트
+      px(ctx, -2.8 * u, 1.6 * u, 5.6 * u, 0.6 * u, '#6b4520'); // 아랫단
+      // 금속 띠
+      px(ctx, -2.8 * u, 0.3 * u, 5.6 * u, 0.45 * u, '#d9b25a');
+      px(ctx, -0.35 * u, -0.6 * u, 0.7 * u, 3.2 * u, '#d9b25a');
+      // 자물쇠
+      px(ctx, -0.55 * u, 0.15 * u, 1.1 * u, 1 * u, '#f0d27a');
+      px(ctx, -0.2 * u, 0.55 * u, 0.4 * u, 0.4 * u, '#6b4520');
+
+      // 벌어진 입 (뚜껑이 열린 만큼 보인다)
+      if (open > 0.12) {
+        px(ctx, -2.5 * u, -0.6 * u - lid * 0.55 * u, 5 * u, lid * 0.6 * u, '#3a1c1c');
+        // 이빨
+        ctx.fillStyle = '#fff6e0';
+        const teeth = 5;
+        for (let i = 0; i < teeth; i++) {
+          const tx = -2.2 * u + i * (4.4 / (teeth - 1)) * u;
+          ctx.beginPath();
+          ctx.moveTo(tx - 0.32 * u, -0.6 * u);
+          ctx.lineTo(tx + 0.32 * u, -0.6 * u);
+          ctx.lineTo(tx, -0.6 * u - Math.min(lid * 0.5, 0.7) * u);
+          ctx.closePath();
+          ctx.fill();
+        }
       }
-      ctx.closePath();
-      ctx.fillStyle = '#ffd54a';
-      ctx.fill();
-      ctx.strokeStyle = '#fff3b0';
-      ctx.lineWidth = Math.max(1, u * 0.4);
-      ctx.stroke();
+
+      // 뚜껑 — 뒤쪽 모서리를 축으로 젖혀진다
+      ctx.save();
+      ctx.translate(-2.8 * u, -0.6 * u);
+      ctx.rotate(-lid * 0.5);
+      px(ctx, 0, -1.5 * u, 5.6 * u, 1.5 * u, '#9c6631');
+      px(ctx, 0, -1.5 * u, 5.6 * u, 0.45 * u, '#b87d3d');
+      px(ctx, 2.45 * u, -1.5 * u, 0.7 * u, 1.5 * u, '#d9b25a');
+      ctx.restore();
+
+      // 눈 — 열렸을 때만 보인다
+      if (open > 0.35) {
+        px(ctx, -1.5 * u, 0.9 * u, 0.6 * u, 0.6 * u, '#ffea00');
+        px(ctx, 0.9 * u, 0.9 * u, 0.6 * u, 0.6 * u, '#ffea00');
+      }
       break;
     }
     case 'cat': {

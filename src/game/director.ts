@@ -18,7 +18,7 @@ export type TimelineEvent =
   | { type: 'boss'; id: BossKindId }
   | { type: 'trial' } // 초월 수련 — 특별 문제 3개
   | { type: 'transcend' } // 초월 — 파워스파이크
-  | { type: 'star' } // 별 몬스터
+  | { type: 'star' } // 미믹(보물상자 몬스터)
   | { type: 'cat' }; // 생선 도둑 고양이
 
 type Cue = { at: number; event: TimelineEvent };
@@ -31,9 +31,15 @@ export const CUES: Cue[] = [
   { at: 600, event: { type: 'boss', id: 'final' } },
 ];
 
-/** 특별 몬스터 등장 주기(초). 원작은 별 몬스터가 13초에 처음 나왔다 — 초반 공백을 만들지 않는다. */
-export const STAR_FIRST = 13;
-export const STAR_EVERY = 38;
+/**
+ * 특별 몬스터 등장 주기(초).
+ *
+ * 미믹은 잡을 때마다 보너스 문제가 나온다. 38초 주기면 10분에 15문항이라
+ * 레벨업 문항(약 18개)과 합쳐 33문항 — 게임 시간 18초마다 한 번꼴로 너무 잦았다.
+ * 첫 등장은 초반 공백을 막기 위해 그대로 이르게 두고, 주기만 늘린다.
+ */
+export const STAR_FIRST = 16;
+export const STAR_EVERY = 78;
 export const CAT_FIRST = 42;
 export const CAT_EVERY = 55;
 
