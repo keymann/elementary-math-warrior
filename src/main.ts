@@ -76,7 +76,7 @@ let lowFpsFor = 0;
 let banner = { text: '', until: 0 };
 let trialCorrect = 0;
 /** 주인공 애니메이션 상태 — 이동 거리로 걷기 위상을 돌린다 */
-const hero: ActorState = { walk: 0, facing: 1, hurt: 0, levelUp: 0 };
+const hero: ActorState = { walk: 0, facing: 1, hurt: 0, levelUp: 0, colorSafe: false };
 let lastBiome = biomeAt(0);
 /** 'home' 이면 게임 화면을 그리지 않는다 */
 let mode: 'home' | 'play' = 'home';
@@ -435,11 +435,17 @@ function render(alpha: number) {
   const nowBiome = biomeAt(world.time);
   if (nowBiome !== lastBiome && mode === 'play') {
     lastBiome = nowBiome;
-    banner = { text: `🗺 ${BIOMES[nowBiome].name}에 들어섰다!`, until: world.time + 2.6 };
+    const eff = B.biome[nowBiome]?.label;
+    banner = {
+      text: eff ? `🗺 ${BIOMES[nowBiome].name} — ${eff}` : `🗺 ${BIOMES[nowBiome].name}에 들어섰다!`,
+      until: world.time + 3,
+    };
   }
 
   const cull = vp.viewRadiusWorld + 90;
   const S = vp.scale;
+  const cs = getSettings().colorSafe;
+  hero.colorSafe = cs;
   const visible = (x: number, y: number) => Math.abs(x - vp.camX) < cull && Math.abs(y - vp.camY) < cull;
 
   world.gems.forEach((g) => {
@@ -459,7 +465,7 @@ function render(alpha: number) {
       // 색약 모드: 색만으로 구분되지 않도록 테두리 두께를 종류별로 다르게 준다
       if (getSettings().colorSafe) ring(ctx, sx, sy, kind.radius * S, '#fff', 1 + (e.kind % 3));
     } else {
-      drawCreature(ctx, kind.id as CreatureId, sx, sy, kind.radius * 2.2 * S, world.time, e.flash > 0, vp.dpr);
+      drawCreature(ctx, kind.id as CreatureId, sx, sy, kind.radius * 2.2 * S, world.time, e.flash > 0, vp.dpr, cs);
     }
   });
 
@@ -487,7 +493,7 @@ function render(alpha: number) {
     const bx = vp.toScreenX(b.px + (b.x - b.px) * alpha);
     const by = vp.toScreenY(b.py + (b.y - b.py) * alpha);
     const br = b.def.radius * S;
-    drawBoss(ctx, b.def.id, bx, by, br * 1.9, world.time, b.flash > 0);
+    drawBoss(ctx, b.def.id, bx, by, br * 1.9, world.time, b.flash > 0, cs);
     if (b.shielded) {
       ring(ctx, bx, by, br * 1.25, 'rgba(120,200,255,0.9)', Math.max(3, 5 * S));
       ring(ctx, bx, by, br * 1.45, 'rgba(120,200,255,0.4)', Math.max(2, 3 * S));

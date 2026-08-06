@@ -18,6 +18,8 @@ export type ActorState = {
   hurt: number;
   /** 레벨업 연출 잔여 시간(초) */
   levelUp: number;
+  /** 색약 모드 — 색 외에 형태로도 상태를 알린다 */
+  colorSafe: boolean;
 };
 
 const px = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill: string) => {
@@ -93,12 +95,18 @@ export function drawHero(
 
   ctx.restore();
 
-  // 피격 — 붉게 덮는다
+  // 피격 — 붉게 덮는다. 색약 모드에서는 흰 테두리를 함께 그려 색 없이도 보이게 한다
   if (st.hurt > 0) {
     ctx.save();
     ctx.globalAlpha = Math.min(0.6, st.hurt * 3);
     ctx.fillStyle = '#ff4d4d';
     ctx.fillRect(cx - size * 0.45, cy - size * 0.72, size * 0.9, size * 1.3);
+    if (st.colorSafe) {
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = Math.max(2, size * 0.09);
+      ctx.strokeRect(cx - size * 0.45, cy - size * 0.72, size * 0.9, size * 1.3);
+    }
     ctx.restore();
   }
 
@@ -131,8 +139,21 @@ export type CreatureId = 'basic' | 'swift' | 'tank' | 'swarm' | 'star' | 'cat';
 const FRAMES = 6;
 const creatureCache = new Map<string, HTMLCanvasElement>();
 
-function creatureSprite(id: CreatureId, size: number, dpr: number, frame: number): HTMLCanvasElement {
-  const key = `${id}@${size}@${dpr}@${frame}`;
+/**
+ * 색약 모드에서 종류를 구분하는 표식.
+ * 색만 다르면 적록색약 학생에게는 말랑이(빨강)와 꼬마 무리(연두)가 같은 색으로 보인다.
+ * 테두리 굵기 + 머리 위 점 개수로 **색 없이도** 구분되게 한다.
+ */
+const CS_PIPS: Record<CreatureId, number> = { basic: 1, swift: 2, swarm: 3, tank: 4, star: 5, cat: 6 };
+
+function creatureSprite(
+  id: CreatureId,
+  size: number,
+  dpr: number,
+  frame: number,
+  colorSafe: boolean,
+): HTMLCanvasElement {
+  const key = `${id}@${size}@${dpr}@${frame}@${colorSafe ? 'cs' : 'n'}`;
   const hit = creatureCache.get(key);
   if (hit) return hit;
 
@@ -144,8 +165,25 @@ function creatureSprite(id: CreatureId, size: number, dpr: number, frame: number
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.translate(pad, pad);
   paintCreature(c, id, size, (frame / FRAMES) * Math.PI * 2);
+  if (colorSafe) paintColorSafeMarks(c, id, size);
   creatureCache.set(key, cv);
   return cv;
+}
+
+/** 색약 모드 표식 — 흰 외곽선 + 머리 위 점 */
+function paintColorSafeMarks(ctx: CanvasRenderingContext2D, id: CreatureId, size: number) {
+  const u = size / 8;
+  const pips = CS_PIPS[id];
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = Math.max(1.2, u * (0.28 + (pips % 3) * 0.14));
+  ctx.strokeRect(-size * 0.32, -size * 0.34, size * 0.64, size * 0.68);
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < pips; i++) {
+    const w = u * 0.5;
+    ctx.fillRect((i - (pips - 1) / 2) * w * 1.7 - w / 2, -size * 0.48, w, w);
+  }
+  ctx.restore();
 }
 
 export function drawCreature(
@@ -157,10 +195,11 @@ export function drawCreature(
   t: number,
   flash: boolean,
   dpr = 1,
+  colorSafe = false,
 ) {
   // 개체마다 위상을 어긋나게 해 무리가 한 몸처럼 움직이지 않게 한다
   const phase = Math.floor((t * 4 + cx * 0.02 + cy * 0.013) % FRAMES + FRAMES) % FRAMES;
-  const sp = creatureSprite(id, size, dpr, phase);
+  const sp = creatureSprite(id, size, dpr, phase, colorSafe);
   const w = sp.width / dpr;
   const h = sp.height / dpr;
   ctx.drawImage(sp, cx - w / 2, cy - h / 2, w, h);
@@ -273,6 +312,7 @@ export function drawBoss(
   size: number,
   t: number,
   flash: boolean,
+  colorSafe = false,
 ) {
   const u = size / 8;
   const b = Math.sin(t * 3);
@@ -342,6 +382,11 @@ export function drawBoss(
     px(ctx, 0.7 * u, -2 * u, 1.5 * u, 1.5 * u, '#ff5c5c');
   }
 
+  if (colorSafe) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = Math.max(2, u * 0.5);
+    ctx.strokeRect(-size * 0.55, -size * 0.62, size * 1.1, size * 1.24);
+  }
   if (flash) {
     ctx.globalAlpha = 0.7;
     ctx.fillStyle = '#fff';
