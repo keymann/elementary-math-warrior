@@ -7,67 +7,129 @@
  */
 import type { SafeArea } from '../render/viewport';
 
+export type SlotView = { emoji: string; id: string; level: number };
+
 export type HudModel = {
   hp: number;
   maxHp: number;
   time: number;
+  level: number;
+  xp: number;
+  xpNext: number;
+  kills: number;
   enemies: number;
   fps: number;
   frameMs: number;
   dpr: number;
   lowPerf: boolean;
+  weapons: SlotView[];
+  passives: SlotView[];
 };
 
 export class Hud {
   private root: HTMLElement;
   private hpFill: HTMLElement;
   private hpText: HTMLElement;
+  private xpFill: HTMLElement;
   private timeEl: HTMLElement;
+  private lvEl: HTMLElement;
+  private killEl: HTMLElement;
   private debugEl: HTMLElement;
-  private last: Partial<HudModel> = {};
+  private slotsEl: HTMLElement;
+
+  private lastHp = -1;
+  private lastSec = -1;
+  private lastXp = -1;
+  private lastLv = -1;
+  private lastKills = -1;
+  private lastFps = -1;
+  private lastSlots = '';
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
     this.root.className = 'hud';
     this.root.innerHTML = `
       <div class="hud-top">
-        <div class="hp"><div class="hp-fill"></div><span class="hp-text"></span></div>
-        <div class="timer"></div>
+        <div class="xp"><div class="xp-fill"></div></div>
+        <div class="hud-row">
+          <div class="pill lv"></div>
+          <div class="hp"><div class="hp-fill"></div><span class="hp-text"></span></div>
+          <div class="timer"></div>
+          <div class="pill kills"></div>
+        </div>
       </div>
-      <div class="debug"></div>
+      <div class="hud-bottom">
+        <div class="slots"></div>
+        <div class="debug"></div>
+      </div>
     `;
     parent.appendChild(this.root);
     this.hpFill = this.root.querySelector('.hp-fill')!;
     this.hpText = this.root.querySelector('.hp-text')!;
+    this.xpFill = this.root.querySelector('.xp-fill')!;
     this.timeEl = this.root.querySelector('.timer')!;
+    this.lvEl = this.root.querySelector('.lv')!;
+    this.killEl = this.root.querySelector('.kills')!;
     this.debugEl = this.root.querySelector('.debug')!;
+    this.slotsEl = this.root.querySelector('.slots')!;
   }
 
   applySafeArea(s: SafeArea) {
-    this.root.style.paddingTop = `${s.top + 10}px`;
+    this.root.style.paddingTop = `${s.top + 8}px`;
     this.root.style.paddingRight = `${s.right + 12}px`;
     this.root.style.paddingBottom = `${s.bottom + 10}px`;
     this.root.style.paddingLeft = `${s.left + 12}px`;
   }
 
   update(m: HudModel) {
-    if (m.hp !== this.last.hp) {
-      this.hpFill.style.width = `${(m.hp / m.maxHp) * 100}%`;
-      this.hpText.textContent = `${Math.ceil(m.hp)} / ${m.maxHp}`;
+    if (m.hp !== this.lastHp) {
+      this.hpFill.style.width = `${Math.max(0, (m.hp / m.maxHp) * 100)}%`;
+      this.hpText.textContent = `${Math.ceil(m.hp)} / ${Math.round(m.maxHp)}`;
+      this.lastHp = m.hp;
     }
-    const t = Math.floor(m.time);
-    if (t !== Math.floor(this.last.time ?? -1)) {
-      this.timeEl.textContent = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+
+    const xpPct = Math.min(100, (m.xp / m.xpNext) * 100);
+    if (Math.abs(xpPct - this.lastXp) > 0.4) {
+      this.xpFill.style.width = `${xpPct}%`;
+      this.lastXp = xpPct;
     }
-    // 디버그는 1초 주기로만 바뀌므로 fps 변화 시에만 갱신
-    if (m.fps !== this.last.fps || m.enemies !== this.last.enemies) {
+
+    const sec = Math.floor(m.time);
+    if (sec !== this.lastSec) {
+      this.timeEl.textContent = `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+      this.lastSec = sec;
+    }
+
+    if (m.level !== this.lastLv) {
+      this.lvEl.textContent = `Lv.${m.level}`;
+      this.lastLv = m.level;
+    }
+
+    if (m.kills !== this.lastKills) {
+      this.killEl.textContent = `⚔️ ${m.kills}`;
+      this.lastKills = m.kills;
+    }
+
+    const sig =
+      m.weapons.map((w) => `${w.id}${w.level}`).join(',') +
+      '|' +
+      m.passives.map((p) => `${p.id}${p.level}`).join(',');
+    if (sig !== this.lastSlots) {
+      const cell = (s: SlotView, cls: string) =>
+        `<span class="slot ${cls}" title="${s.id}">${s.emoji}<b>${s.level}</b></span>`;
+      this.slotsEl.innerHTML =
+        m.weapons.map((w) => cell(w, 'w')).join('') + m.passives.map((p) => cell(p, 'p')).join('');
+      this.lastSlots = sig;
+    }
+
+    if (m.fps !== this.lastFps) {
       this.debugEl.innerHTML =
         `<b class="${m.fps < 50 ? 'warn' : 'ok'}">${m.fps.toFixed(0)} fps</b>` +
         ` · ${m.frameMs.toFixed(1)} ms` +
         ` · 적 <b>${m.enemies}</b>` +
         ` · DPR ${m.dpr}` +
-        (m.lowPerf ? ' · <b class="warn">저사양 모드</b>' : '');
+        (m.lowPerf ? ' · <b class="warn">저사양</b>' : '');
+      this.lastFps = m.fps;
     }
-    this.last = m;
   }
 }
