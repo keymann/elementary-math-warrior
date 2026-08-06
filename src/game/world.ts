@@ -66,6 +66,8 @@ export type RunEvent =
   | { type: 'transcend' }
   | { type: 'boss'; id: BossKindId; name: string }
   | { type: 'bossdown'; id: BossKindId }
+  /** 중간보스를 제한 시간 안에 못 잡아 물러남 */
+  | { type: 'bossflee'; id: BossKindId }
   /** 최종보스 방어막 — 문제를 맞혀야 깨진다 */
   | { type: 'shield' }
   | { type: 'pickup'; kind: PickupKind }
@@ -95,6 +97,8 @@ export class World {
   pendingLevelUps = 0;
   /** 보스전 중에는 타이머만 멈춘다 (전투는 계속) */
   timeFrozen = false;
+  /** 보스전 경과 시간 — 교착 방지용 */
+  private bossElapsed = 0;
   transcended = false;
 
   private director = new Director();
@@ -183,6 +187,7 @@ export class World {
     this.stepProjectiles(dt);
     this.stepEnemies(dt);
     this.stepBoss(dt);
+    this.checkBossStall(dt);
     this.stepGems(dt);
     this.stepPickups(dt);
 
@@ -313,14 +318,13 @@ export class World {
         bestY = e.y;
       }
     });
-    // 보스도 조준 대상 — 보스만 남았을 때 무기가 놀면 안 된다
+    // 보스가 있으면 **보스를 우선 조준한다.**
+    // 가장 가까운 적만 노리게 두면 잡몹이 항상 더 가까워 보스에 피해가 거의 안 들어가고,
+    // 타이머가 멈춘 채 보스전이 끝나지 않는다(시뮬레이터에서 실제로 720초 교착 발생).
     if (this.boss.active) {
-      const d = (this.boss.x - p.x) ** 2 + (this.boss.y - p.y) ** 2;
-      if (d < bestD) {
-        bestD = d;
-        bestX = this.boss.x;
-        bestY = this.boss.y;
-      }
+      bestD = 0;
+      bestX = this.boss.x;
+      bestY = this.boss.y;
     }
     if (bestD === Infinity) return null;
     return Math.atan2(bestY - p.y, bestX - p.x);
@@ -596,9 +600,30 @@ export class World {
     if (p.invuln <= 0 && d < b.def.radius + B.player.radius) this.hurtPlayer(b.def.damage);
   }
 
+  /**
+   * 중간보스 교착 방지.
+   * 타이머가 멈춘 상태에서 보스를 못 잡으면 판이 영원히 끝나지 않는다.
+   * 일정 시간이 지나면 보스가 물러나고 타이머를 다시 흐르게 한다.
+   * (최종보스는 예외 — 그건 엔딩이라 물러나면 안 된다)
+   */
+  private checkBossStall(dt: number) {
+    if (!this.boss.active) {
+      this.bossElapsed = 0;
+      return;
+    }
+    this.bossElapsed += dt;
+    if (this.boss.def.id === 'final') return;
+    if (this.bossElapsed < B.boss.stallSeconds) return;
+
+    this.boss.active = false;
+    this.timeFrozen = false;
+    this.bossElapsed = 0;
+    this.emit({ type: 'bossflee', id: this.boss.def.id });
+  }
+
   private hurtPlayer(amount: number) {
     const p = this.player;
-    p.hp = Math.max(0, p.hp - amount);
+    p.hp = Math.max(0, p.hp - amount * B.enemy.damageScaleAt(this.time));
     p.invuln = B.player.invulnAfterHit;
     this.shakeRequest += 0.25;
     if (p.hp <= 0) {
@@ -779,6 +804,7 @@ export class World {
     this.director.reset();
     this.boss.active = false;
     this.timeFrozen = false;
+    this.bossElapsed = 0;
 
     const p = this.player;
     p.x = p.y = p.px = p.py = 0;

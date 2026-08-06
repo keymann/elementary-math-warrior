@@ -13,6 +13,7 @@ import type { Grade } from '../quiz/selector';
 import { PICKUP_EMOJI } from '../game/pickups';
 import { fetchRanking, type RankRow } from '../net/leaderboard';
 import type { Identity } from '../meta/save';
+import { getSettings, setSetting, SETTING_LABELS, type Settings } from '../meta/settings';
 
 export type StartResult =
   | { action: 'new'; grade: Grade; starter: WeaponId; identity: Identity }
@@ -138,6 +139,7 @@ export class Screens {
             <button class="ghost how">❓ 게임 방법</button>
             <button class="ghost dex">✨ 각성 도감</button>
             <button class="ghost hall">🏆 전당</button>
+            <button class="ghost opt">⚙️ 설정</button>
           </div>
         </div>`);
 
@@ -167,6 +169,9 @@ export class Screens {
           this.how(() => this.start(opts).then(resolve));
         } else if (b.classList.contains('dex')) {
           this.dex(() => this.start(opts).then(resolve));
+        } else if (b.classList.contains('opt')) {
+          const id = readIdentity(node);
+          this.options(() => this.start({ ...opts, identity: id }).then(resolve));
         } else if (b.classList.contains('hall')) {
           const id = readIdentity(node);
           void this.hall(grade, id.classCode, () =>
@@ -228,6 +233,45 @@ export class Screens {
         <ul class="dex-list">${rows}</ul>
         <button class="primary close">닫기</button>
       </div>`);
+    node.querySelector('.close')!.addEventListener('click', onClose);
+    this.show(node);
+  }
+
+  /* ─────────────── 설정 (접근성) ─────────────── */
+
+  options(onClose: () => void) {
+    const st = getSettings();
+    const keys = Object.keys(SETTING_LABELS) as (keyof Settings)[];
+    const node = el(`
+      <div class="screen sheet">
+        <h2>⚙️ 설정</h2>
+        <p class="sub">한 반에는 색이 잘 안 보이는 친구도, 느린 태블릿도 섞여 있어요.</p>
+        <ul class="opt-list">
+          ${keys
+            .map(
+              (k) => `<li>
+                <button class="toggle ${st[k] ? 'on' : ''}" data-k="${k}" role="switch" aria-checked="${st[k]}">
+                  <span class="tl">
+                    <b>${SETTING_LABELS[k].label}</b>
+                    <span>${SETTING_LABELS[k].desc}</span>
+                  </span>
+                  <span class="sw"></span>
+                </button>
+              </li>`,
+            )
+            .join('')}
+        </ul>
+        <button class="primary close">닫기</button>
+      </div>`);
+    node.addEventListener('click', (ev) => {
+      const b = (ev.target as HTMLElement).closest('.toggle') as HTMLElement | null;
+      if (!b) return;
+      const k = b.dataset.k as keyof Settings;
+      const next = !getSettings()[k];
+      setSetting(k, next);
+      b.classList.toggle('on', next);
+      b.setAttribute('aria-checked', String(next));
+    });
     node.querySelector('.close')!.addEventListener('click', onClose);
     this.show(node);
   }

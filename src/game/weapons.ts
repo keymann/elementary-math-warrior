@@ -114,8 +114,8 @@ export const WEAPONS: WeaponDef[] = [
     maxLevel: 5,
     spec: (lv) =>
       base({
-        cooldown: 1.0 - 0.07 * (lv - 1),
-        damage: 11 + 4 * (lv - 1),
+        cooldown: 1.05 - 0.07 * (lv - 1),
+        damage: 10 + 3.5 * (lv - 1),
         count: 1,
         speed: 680,
         radius: 6,
@@ -176,8 +176,8 @@ export const WEAPONS: WeaponDef[] = [
     maxLevel: 5,
     spec: (lv) =>
       base({
-        cooldown: 1.3 - 0.09 * (lv - 1),
-        damage: 7 + 2.5 * (lv - 1),
+        cooldown: 1.18 - 0.09 * (lv - 1),
+        damage: 9 + 3 * (lv - 1),
         count: 5 + lv - 1,
         speed: 430,
         radius: 7,

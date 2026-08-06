@@ -361,3 +361,40 @@ body {
   cursor: pointer; touch-action: manipulation;
 }
 .pausebtn.show { display: block; }
+
+/* ── 접근성 (Phase 7) ── */
+.opt-list { list-style: none; margin: 0 0 14px; padding: 0; }
+.opt-list li { margin-bottom: 8px; }
+.toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  min-height: 60px; padding: 10px 14px; text-align: left;
+  border: 2px solid rgba(255,255,255,.16); border-radius: 14px;
+  background: rgba(255,255,255,.05); color: #fff; font: inherit;
+  cursor: pointer; touch-action: manipulation;
+}
+.toggle.on { border-color: #6ddc7a; background: rgba(109,220,122,.14); }
+.toggle .tl { display: flex; flex-direction: column; gap: 2px; }
+.toggle .tl b { font-size: 14.5px; }
+.toggle .tl span { font-size: 12px; color: #c8d6bf; }
+.toggle .sw {
+  flex: 0 0 46px; height: 26px; border-radius: 13px; position: relative;
+  background: rgba(255,255,255,.18); transition: background .15s;
+}
+.toggle.on .sw { background: #37b24d; }
+.toggle .sw::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+  border-radius: 50%; background: #fff; transition: transform .15s;
+}
+.toggle.on .sw::after { transform: translateX(20px); }
+
+/* 색약 모드 — 색 대비를 높이고 경계를 뚜렷하게 */
+body.a11y-color-safe .hp-fill { background: linear-gradient(90deg, #ffffff, #b9f6ca); }
+body.a11y-color-safe .xp-fill { background: linear-gradient(90deg, #ffffff, #82b1ff); }
+body.a11y-color-safe .quiz-overlay .choice.correct { border-width: 4px; }
+body.a11y-color-safe .quiz-overlay .choice.wrong { border-width: 4px; border-style: dashed; }
+
+/* 큰 글씨 — 문제와 보기를 키운다 */
+body.a11y-big-text .quiz-overlay .q .expr { font-size: 26px; }
+body.a11y-big-text .quiz-overlay .choice { font-size: 24px; min-height: 66px; }
+body.a11y-big-text .card .nm { font-size: 17px; }
+body.a11y-big-text .card .ds { font-size: 14px; }

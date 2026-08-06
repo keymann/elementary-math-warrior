@@ -18,7 +18,7 @@ export const BALANCE = {
     speed: 210, // 월드 단위/초
     radius: 16,
     /** 피격 후 무적 시간(초) — 없으면 적 무리에 닿는 순간 즉사한다 */
-    invulnAfterHit: 0.6,
+    invulnAfterHit: 0.7,
     /**
      * 보석 흡수 기본 반경.
      * 90 이었을 때, 넓게 도는 플레이(지나온 자리로 안 돌아감)에서 회수율이 크게 떨어졌다
@@ -35,7 +35,14 @@ export const BALANCE = {
     /** 넉백 감쇠 (초당 남는 비율) */
     knockbackDamp: 0.02,
     /** 시간에 따른 체력 배수: 1 + t / hpScaleSeconds */
-    hpScaleSeconds: 240,
+    hpScaleSeconds: 200,
+    /**
+     * 초반 접촉 피해 경사.
+     * 시뮬레이션에서 미숙련 프로필의 첫 사망이 1분 43초로 목표(4~6분)에 한참 못 미쳤다.
+     * 스폰을 줄이는 것만으로는 부족해서, 처음 2분간 피해량 자체를 낮춘다.
+     * 후반 난이도는 그대로 두므로 숙련 플레이가 헐거워지지 않는다.
+     */
+    damageScaleAt: (t: number) => Math.min(1, 0.4 + t / 400),
   },
 
   spawn: {
@@ -53,7 +60,7 @@ export const BALANCE = {
      * 시간에 따라 열어 준다: 0분 70체 → 10분 300체.
      */
     maxAlive: 300,
-    aliveCapAt: (t: number) => Math.min(300, 70 + (t / 60) * 23),
+    aliveCapAt: (t: number) => Math.min(300, 46 + (t / 60) * 26),
   },
 
   gem: {
@@ -68,9 +75,10 @@ export const BALANCE = {
   level: {
     /**
      * 레벨 L → L+1 에 필요한 경험치.
-     * 목표: 10분 한 판에 15~20회 레벨업 (작업계획 4장)
+     * 목표: 10분 한 판에 15~20회 레벨업 (작업계획 4장).
+     * 144판 시뮬레이션에서 21.2회가 나와 곡선을 약 15% 세웠다.
      */
-    xpToNext: (level: number) => 6 + 5 * (level - 1) + Math.floor((level - 1) ** 1.7),
+    xpToNext: (level: number) => 6 + 6 * (level - 1) + Math.floor((level - 1) ** 1.78),
   },
 
   special: {
@@ -90,7 +98,12 @@ export const BALANCE = {
     /** 보스 등장 위치 — 스폰 링보다 조금 가깝게 */
     spawnDistance: 520,
     /** 보스전 동안 일반 적 스폰 비율 */
-    spawnScaleDuringBoss: 0.35,
+    spawnScaleDuringBoss: 0.3,
+    /**
+     * 중간보스 제한 시간(초). 넘으면 보스가 물러나고 타이머가 다시 흐른다.
+     * 없으면 보스를 못 잡는 플레이어의 판이 영원히 끝나지 않는다.
+     */
+    stallSeconds: 100,
   },
 
   transcend: {

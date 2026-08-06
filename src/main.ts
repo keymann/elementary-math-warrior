@@ -26,6 +26,7 @@ import { CardOverlay, QuizOverlay, showAwaken } from './ui/overlays';
 import { Hud } from './ui/hud';
 import { Screens } from './ui/screens';
 import { submitScore } from './net/leaderboard';
+import { apply as applySettings, getSettings } from './meta/settings';
 import {
   clearRun,
   loadIdentity,
@@ -40,6 +41,8 @@ import {
   titleFor,
   type SavedRun,
 } from './meta/save';
+
+applySettings();
 
 const app = document.getElementById('app')!;
 const canvas = document.createElement('canvas');
@@ -408,7 +411,8 @@ function render(alpha: number) {
   const pxPos = p.px + (p.x - p.px) * alpha;
   const pyPos = p.py + (p.y - p.py) * alpha;
   if (world.shakeRequest > 0) {
-    vp.addShake(world.shakeRequest);
+    // 흔들림 끄기는 접근성 옵션 — 멀미를 느끼는 학생이 있다
+    if (!getSettings().reduceShake) vp.addShake(world.shakeRequest);
     world.shakeRequest = 0;
   }
   vp.follow(pxPos, pyPos, 1 / 60);
@@ -433,8 +437,10 @@ function render(alpha: number) {
     const kind = ENEMY_KINDS[e.kind];
     const sx = vp.toScreenX(ex);
     const sy = vp.toScreenY(ey);
-    if (lowPerf) {
+    if (lowPerf || getSettings().forceLowPerf) {
       circle(ctx, sx, sy, kind.radius * S, e.flash > 0 ? '#fff' : kind.color);
+      // 색약 모드: 색만으로 구분되지 않도록 테두리 두께를 종류별로 다르게 준다
+      if (getSettings().colorSafe) ring(ctx, sx, sy, kind.radius * S, '#fff', 1 + (e.kind % 3));
     } else {
       if (e.flash > 0) circle(ctx, sx, sy, kind.radius * S * 1.15, 'rgba(255,255,255,0.75)');
       drawEmoji(ctx, kind.emoji, sx, sy, kind.radius * 2.2 * S, vp.dpr);

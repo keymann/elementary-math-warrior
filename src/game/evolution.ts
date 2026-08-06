@@ -26,8 +26,12 @@ export const EVOLUTIONS: Evolution[] = [
 /** 무기 → 짝꿍 패시브 (카드 힌트 표기용) */
 export const PARTNER_OF = new Map<WeaponId, PassiveId>(EVOLUTIONS.map((e) => [e.base, e.partner]));
 
-/** 각성에 필요한 기본 무기 레벨 */
-export const EVOLVE_AT_LEVEL = 5;
+/**
+ * 각성에 필요한 기본 무기 레벨.
+ * Lv.5 였을 때 시뮬레이션 각성 도달률이 31.9% 에 그쳤다(목표 70%).
+ * 각성은 이 게임의 핵심 보상이라 대부분이 한 번은 봐야 한다.
+ */
+export const EVOLVE_AT_LEVEL = 4;
 
 /**
  * 지금 각성 가능한 조합을 찾는다.
