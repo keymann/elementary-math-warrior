@@ -2,21 +2,47 @@
 
 초등 수학 서바이버형 학습 게임. 이동만 조작하고 공격은 자동, 레벨업 때 수학 문제를 풀어 강화를 얻는다.
 
-- 배포: **Cloudflare Pages**
+- 배포: **Cloudflare Workers Static Assets** (`wrangler.jsonc`, assets-only)
 - 문서: [`docs/수학서바이버-클론-작업계획.md`](docs/수학서바이버-클론-작업계획.md) · [`docs/수학서바이버-블랙박스-측정표.md`](docs/수학서바이버-블랙박스-측정표.md)
 
 ## 현재 상태
 
-**Phase 0 — 퀴즈 어댑터 PoC** 단계. 게임 엔진은 아직 없다.
+**Phase 1 — 엔진 스캐폴드**. 전투·무기·퀴즈 연결은 Phase 2~3.
 
 ```bash
 npm install
-npm run dev        # → http://localhost:5173  어댑터 PoC 검수 페이지
+npm run dev        # → http://localhost:5173      게임 (엔진 스캐폴드)
+                   #   http://localhost:5173/poc.html  어댑터 PoC 검수 페이지
 npm run typecheck
-npm run build      # dist/
+npm run build      # dist/ (index.html + poc.html + 404.html + _headers)
+npm run deploy     # 빌드 후 wrangler deploy
 ```
 
 `npm run dev`는 `host: true`로 열리므로 같은 네트워크의 실제 모바일·태블릿에서 접속해 확인할 수 있다.
+
+### 엔진 구조
+
+| 파일 | 역할 |
+|---|---|
+| `src/core/loop.ts` | 고정 타임스텝(1/60) 루프. 렌더는 보간 |
+| `src/core/input.ts` | 키보드 / 터치 / 마우스 → 단일 정규화 벡터. 플로팅 조이스틱 공유 |
+| `src/core/pool.ts` | 오브젝트 풀 (GC 스파이크 방지) |
+| `src/core/spatial.ts` | 균일 그리드 브로드페이즈 충돌 |
+| `src/core/rng.ts` | 시드 난수 (리플레이·검증 전제) |
+| `src/render/viewport.ts` | DPR 상한 2, safe-area, 회전 시 시야 보정, 카메라 |
+| `src/render/draw.ts` | 이모지 스프라이트 캐시, 무한 격자, 조이스틱 |
+| `src/game/balance.ts` | 모든 밸런스 수치 (여기 한 곳에만) |
+| `src/game/world.ts` | 플레이어·적 추적·분리·스폰 |
+
+### 측정 결과 (데스크톱 Chromium)
+
+| 동시 적 | 평균 fps | 프레임 시간 |
+|---|---|---|
+| 100 | 60 | 0.55 ms |
+| **300** | **60** | **1.04 ms** |
+| 600 | 60 | 1.38 ms |
+
+조작: 키보드 210 단위/초 정확, 대각선 속도 이득 없음(207), 데드존 3px 무반응, ESC 일시정지 중 이동 0.
 
 ## 퀴즈 어댑터
 
