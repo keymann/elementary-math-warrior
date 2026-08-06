@@ -10,13 +10,15 @@ import { ENEMY_KINDS, type EnemyKind } from './enemies';
 import type { Rng } from '../core/rng';
 
 /**
- * 초당 스폰 수 — 0분 3마리에서 10분 25마리까지.
+ * 초당 스폰 수 — 0분 2.1마리에서 10분 26마리까지.
+ * 초반을 더 완만하게 깔았다. 미숙련 프로필의 첫 사망이 1분 56초로 너무 일렀다
+ * (목표 4~6분). 대신 후반 경사를 세워 숙련 플레이가 헐거워지지 않게 한다.
  * 첫 측정에서 8/s 로 시작했더니 45초 만에 생존 상한(300)에 닿아
  * 플레이어가 피할 공간이 사라졌다. 처치 속도와 균형을 맞춘 값.
  */
 export function spawnRate(t: number): number {
   const minutes = t / 60;
-  return 3 + minutes * 2.2;
+  return 2.1 + minutes * 2.4;
 }
 
 /** 시간에 따른 적 체력 배수 */

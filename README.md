@@ -7,7 +7,7 @@
 
 ## 현재 상태
 
-**Phase 6 — 백엔드 · PWA**. 밸런싱·QA는 Phase 7.
+**Phase 7 — 밸런싱 · QA**. 남은 것은 교실 파일럿.
 
 ```bash
 npm install
@@ -55,6 +55,17 @@ npm run deploy     # 빌드 후 wrangler deploy
 | `src/worker/index.ts` | Cloudflare Worker — 정적 자산 + 랭킹 API + 점수 검증 |
 | `src/net/leaderboard.ts` | 랭킹 클라이언트 (실패해도 게임을 막지 않음) |
 | `migrations/0001_init.sql` | D1 스키마 |
+| `src/sim/` | 헤드리스 시뮬레이터 (봇 · 단일 런 · 배치) |
+| `src/meta/settings.ts` | 접근성 설정 |
+
+### 밸런스 시뮬레이터
+
+```bash
+npm run sim              # 96판 배치 (약 100초, 최대 435배속)
+npm run sim -- runs=20   # 셀당 20판
+```
+
+목표 지표 리포트를 출력한다. 결과와 조정 내역은 [`docs/밸런스-시뮬레이션-결과.md`](docs/밸런스-시뮬레이션-결과.md).
 
 ### 랭킹 서버 최초 1회 설정
 
