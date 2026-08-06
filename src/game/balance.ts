@@ -73,6 +73,34 @@ export const BALANCE = {
     xpToNext: (level: number) => 6 + 5 * (level - 1) + Math.floor((level - 1) ** 1.7),
   },
 
+  special: {
+    /** 별 몬스터 — 잡으면 보너스 문제 */
+    star: { hp: 90, speed: 58, radius: 20, damage: 6, xp: 12 },
+    /** 생선 도둑 고양이 — 도망친다. 잡으면 생선(회복) 드랍 */
+    cat: { hp: 45, speed: 165, radius: 16, damage: 4, xp: 8, fleeRadius: 260 },
+    /** 생선 회복량 */
+    fishHeal: 50,
+    /** 폭탄 아이템 피해 */
+    bombDamage: 400,
+    /** 아이템 획득 반경 */
+    pickupRadius: 34,
+  },
+
+  boss: {
+    /** 보스 등장 위치 — 스폰 링보다 조금 가깝게 */
+    spawnDistance: 520,
+    /** 보스전 동안 일반 적 스폰 비율 */
+    spawnScaleDuringBoss: 0.35,
+  },
+
+  transcend: {
+    /** 초월 시 배수 */
+    power: 1.35,
+    rate: 1.25,
+    /** 초월 수련 문제 수 */
+    trialQuestions: 3,
+  },
+
   perf: {
     /** 이 fps 아래가 lowFpsSeconds 이상 지속되면 저사양 모드로 자동 전환 */
     lowFpsThreshold: 45,

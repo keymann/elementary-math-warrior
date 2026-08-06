@@ -5,7 +5,7 @@
  * `from` 은 등장 시각(초) — 시간이 갈수록 종류가 늘어나 단조로움을 줄인다.
  */
 
-export type EnemyKindId = 'basic' | 'swift' | 'tank' | 'swarm';
+export type EnemyKindId = 'basic' | 'swift' | 'tank' | 'swarm' | 'star' | 'cat';
 
 export type EnemyKind = {
   id: EnemyKindId;
@@ -24,6 +24,8 @@ export type EnemyKind = {
   weight: number;
   /** 한 번에 뭉쳐 나오는 수 */
   cluster: number;
+  /** 플레이어에게서 도망친다 (생선 도둑 고양이) */
+  flee?: boolean;
 };
 
 export const ENEMY_KINDS: EnemyKind[] = [
@@ -78,6 +80,34 @@ export const ENEMY_KINDS: EnemyKind[] = [
     from: 180,
     weight: 3,
     cluster: 1,
+  },
+  // ── 아래 둘은 디렉터가 직접 부른다. from 을 크게 두어 일반 스폰 추첨에서 빠진다.
+  {
+    id: 'star',
+    emoji: '⭐',
+    color: '#ffd54a',
+    hp: 90,
+    speed: 58,
+    damage: 6,
+    radius: 20,
+    xp: 12,
+    from: 1e9,
+    weight: 0,
+    cluster: 1,
+  },
+  {
+    id: 'cat',
+    emoji: '🐈',
+    color: '#e0a86b',
+    hp: 45,
+    speed: 165,
+    damage: 4,
+    radius: 16,
+    xp: 8,
+    from: 1e9,
+    weight: 0,
+    cluster: 1,
+    flee: true,
   },
 ];
 

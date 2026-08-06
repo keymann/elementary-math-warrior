@@ -15,6 +15,8 @@ import { Input } from './core/input';
 import { Viewport } from './render/viewport';
 import { drawEmoji, drawGrid, drawJoystick, circle, ring } from './render/draw';
 import { World, type RunEvent } from './game/world';
+import { PICKUP_EMOJI, PICKUP_LABEL } from './game/pickups';
+import { BALANCE as B2 } from './game/balance';
 import { ENEMY_KINDS } from './game/enemies';
 import { BALANCE as B } from './game/balance';
 import { STARTER_WEAPONS, WEAPON_BY_ID, type WeaponId } from './game/weapons';
@@ -47,11 +49,125 @@ let lowFpsFor = 0;
 /** 최근 레벨업 알림 (화면 중앙 배너) */
 let banner = { text: '', until: 0 };
 
+let trialCorrect = 0;
+/** 검증용 이벤트 로그 */
+const eventLog: string[] = [];
+
 world.on((e: RunEvent) => {
-  if (e.type === 'levelup') void runLevelUpFlow();
-  else if (e.type === 'awaken') banner = { text: `✨ ${e.evolution.result}`, until: world.time + 1.8 };
-  else showResult(e.reason);
+  eventLog.push(`${world.time.toFixed(1)} ${e.type}${'id' in e ? ':' + e.id : ''}${'kind' in e ? ':' + e.kind : ''}`);
+  switch (e.type) {
+    case 'levelup':
+      void runLevelUpFlow();
+      break;
+    case 'awaken':
+      banner = { text: `✨ ${e.evolution.result}`, until: world.time + 1.8 };
+      break;
+    case 'boss':
+      bossName.textContent = e.name;
+      bossBar.classList.add('show');
+      banner = { text: `⚔️ ${e.name} 등장! (타이머 정지)`, until: world.time + 2.4 };
+      break;
+    case 'bossdown':
+      bossBar.classList.remove('show');
+      banner = { text: '🎉 보스 격파!', until: world.time + 2 };
+      break;
+    case 'shield':
+      void runShieldFlow();
+      break;
+    case 'bonus':
+      void runBonusFlow();
+      break;
+    case 'trial':
+      void runTrialFlow();
+      break;
+    case 'transcend':
+      banner = { text: '🔥 초월! 힘이 솟아난다', until: world.time + 2.4 };
+      break;
+    case 'pickup':
+      banner = { text: PICKUP_LABEL[e.kind], until: world.time + 1.8 };
+      break;
+    case 'gameover':
+      showResult(e.reason);
+      break;
+  }
 });
+
+/** 별 몬스터 보너스 문제 — 맞히면 맵 전체 자석 또는 폭탄이 떨어진다 */
+async function runBonusFlow() {
+  await withPaused(async () => {
+    const quiz = selector.next();
+    if (!quiz) return;
+    const ok = await quizOverlay.ask(quiz, '⭐ 보너스 문제! 맞히면 특별 아이템');
+    selector.grade_(quiz, ok);
+    if (!ok) return;
+    const kind = Math.random() < 0.5 ? 'magnet' : 'bomb';
+    const a = Math.random() * Math.PI * 2;
+    world.dropPickup(kind, world.player.x + Math.cos(a) * 140, world.player.y + Math.sin(a) * 140);
+    banner = { text: `${PICKUP_EMOJI[kind]} 아이템 드랍! 주우러 가자`, until: world.time + 2 };
+  });
+}
+
+/** 초월 수련 — 특별 문제 3개. 맞힌 수만큼 초월이 강해진다. */
+async function runTrialFlow() {
+  await withPaused(async () => {
+    trialCorrect = 0;
+    for (let i = 0; i < B2.transcend.trialQuestions; i++) {
+      const quiz = selector.next();
+      if (!quiz) break;
+      const ok = await quizOverlay.ask(quiz, `🔥 초월 수련 ${i + 1}/${B2.transcend.trialQuestions}`);
+      selector.grade_(quiz, ok);
+      if (ok) trialCorrect++;
+    }
+    world.addTranscendBonus(trialCorrect);
+    banner = { text: `🔥 초월 수련 ${trialCorrect}/${B2.transcend.trialQuestions} 성공`, until: world.time + 2.4 };
+  });
+}
+
+/** 최종보스 방어막 — 맞힐 때까지 문제를 낸다. 틀려도 벌은 없다. */
+async function runShieldFlow() {
+  await withPaused(async () => {
+    for (let guard = 0; guard < 12; guard++) {
+      const quiz = selector.next();
+      if (!quiz) break;
+      const ok = await quizOverlay.ask(quiz, '🛡 방어막을 깨라!');
+      selector.grade_(quiz, ok);
+      if (ok) break;
+    }
+    world.breakShield();
+    banner = { text: '💥 방어막이 깨졌다!', until: world.time + 1.6 };
+  });
+}
+
+/**
+ * 퀴즈 흐름 직렬화.
+ *
+ * 레벨업·보너스·초월 수련·방어막이 **같은 오버레이 하나를 공유**한다.
+ * 두 흐름이 겹치면 뒤에 온 쪽이 앞의 DOM 을 덮어써 앞 흐름의 Promise 가
+ * 영원히 resolve 되지 않는다(실제로 초월 수련·최종보스 구간이 통째로 사라졌다).
+ * 그래서 모든 흐름을 하나의 체인에 태워 순서대로 실행한다.
+ */
+let chain: Promise<void> = Promise.resolve();
+let queued = 0;
+
+function enqueue(fn: () => Promise<void>) {
+  queued++;
+  chain = chain
+    .then(async () => {
+      loop.setPaused(true);
+      await fn();
+    })
+    .catch((err) => console.error('[flow]', err))
+    .finally(() => {
+      queued--;
+      if (queued === 0 && !world.over) loop.setPaused(false);
+    });
+  return chain;
+}
+
+/** 이전 이름 유지 — 내부적으로 큐에 넣는다 */
+function withPaused(fn: () => Promise<void>) {
+  return enqueue(fn);
+}
 
 /**
  * 레벨업 처리: **게임을 멈추고** 퀴즈 → (정답이면) 카드 3택 → 각성 판정.
@@ -60,12 +176,8 @@ world.on((e: RunEvent) => {
  * 문제 푸는 시간이 생존 시간을 깎으면 학생은 문제를 대충 찍게 된다
  * (원작 블랙박스 측정 3장에서 확인한 결정).
  */
-let flowRunning = false;
 async function runLevelUpFlow() {
-  if (flowRunning) return; // 여러 레벨이 한꺼번에 올라도 순차 처리
-  flowRunning = true;
-  loop.setPaused(true);
-
+  await enqueue(async () => {
   while (world.pendingLevelUps > 0 && !world.over) {
     world.pendingLevelUps--;
 
@@ -83,15 +195,21 @@ async function runLevelUpFlow() {
         world.applyUpgrade(picked);
         banner = { text: `${picked.emoji} ${picked.id}`, until: world.time + 1.4 };
       }
-      // 각성은 정답을 맞힌 뒤에만 판정한다
-      const evo = world.tryEvolve();
-      if (evo) await showAwaken(app, evo, WEAPON_BY_ID.get(evo.result)?.emoji ?? '✨');
+        // 각성은 정답을 맞힌 뒤에만 판정한다
+        const evo = world.tryEvolve();
+        if (evo) await showAwaken(app, evo, WEAPON_BY_ID.get(evo.result)?.emoji ?? '✨');
+      }
     }
-  }
-
-  flowRunning = false;
-  if (!world.over) loop.setPaused(false);
+  });
 }
+
+/* ── 보스 체력바 ── */
+const bossBar = document.createElement('div');
+bossBar.className = 'bossbar';
+bossBar.innerHTML = `<div class="name"></div><div class="track"><div class="fill"></div></div><div class="shield">🛡 방어막 — 문제를 풀어야 깨진다!</div>`;
+app.appendChild(bossBar);
+const bossName = bossBar.querySelector('.name') as HTMLElement;
+const bossFill = bossBar.querySelector('.fill') as HTMLElement;
 
 /* ── 결과 오버레이 ── */
 const result = document.createElement('div');
@@ -119,6 +237,7 @@ function showResult(reason: 'dead' | 'cleared') {
 
 function restart() {
   result.classList.remove('show');
+  bossBar.classList.remove('show');
   const seed = Math.floor(Math.random() * 1e9);
   world.reset(seed, starter);
   selector = new QuizSelector(grade, makeRng(seed));
@@ -256,6 +375,29 @@ function render(alpha: number) {
     }
   });
 
+  // 특수 아이템 (생선·자석·폭탄)
+  world.pickups.forEach((it) => {
+    if (!visible(it.x, it.y)) return;
+    const ix = vp.toScreenX(it.x);
+    const iy = vp.toScreenY(it.y) - Math.sin(it.age * 4) * 4; // 살짝 떠 있게
+    ring(ctx, ix, iy, 22 * S, 'rgba(255,255,255,0.35)', 2);
+    drawEmoji(ctx, PICKUP_EMOJI[it.kind], ix, iy, 30 * S, vp.dpr);
+  });
+
+  // 보스
+  if (world.boss.active) {
+    const b = world.boss;
+    const bx = vp.toScreenX(b.px + (b.x - b.px) * alpha);
+    const by = vp.toScreenY(b.py + (b.y - b.py) * alpha);
+    const br = b.def.radius * S;
+    if (b.flash > 0) circle(ctx, bx, by, br * 1.1, 'rgba(255,255,255,0.8)');
+    drawEmoji(ctx, b.def.emoji, bx, by, br * 2.1, vp.dpr);
+    if (b.shielded) {
+      ring(ctx, bx, by, br * 1.25, 'rgba(120,200,255,0.9)', Math.max(3, 5 * S));
+      ring(ctx, bx, by, br * 1.45, 'rgba(120,200,255,0.4)', Math.max(2, 3 * S));
+    }
+  }
+
   // 플레이어
   const sx = vp.toScreenX(pxPos);
   const sy = vp.toScreenY(pyPos);
@@ -263,6 +405,12 @@ function render(alpha: number) {
     ring(ctx, sx, sy, B.player.radius * S + 4, 'rgba(255,120,120,0.9)', 3);
   }
   drawEmoji(ctx, '🦔', sx, sy, B.player.radius * 2.6 * S, vp.dpr);
+
+  // 보스 체력바
+  if (world.boss.active) {
+    bossFill.style.width = `${Math.max(0, (world.boss.hp / world.boss.maxHp) * 100)}%`;
+    bossBar.classList.toggle('shielded', world.boss.shielded);
+  }
 
   // 조이스틱 — 터치·마우스 모두 동일하게 표시
   const j = input.joystick();
@@ -332,6 +480,9 @@ declare global {
         projectiles: number;
         gems: number;
         over: string | null;
+        transcended: boolean;
+        timeFrozen: boolean;
+        bossActive: boolean;
         weapons: [string, number][];
         passives: [string, number][];
       };
@@ -340,6 +491,11 @@ declare global {
       quiz: () => { total: number; correct: number; accuracy: number | null; open: boolean };
       /** 테스트용 — 무기/패시브 레벨을 즉시 부여한다 */
       grant: (kind: 'weapon' | 'passive', id: string, level: number) => void;
+      /** 테스트용 — 타임라인 큐를 확인하려고 시각을 앞당긴다 */
+      skipTo: (t: number) => void;
+      events: () => string[];
+      boss: () => { active: boolean; name: string; hp: number; maxHp: number; shielded: boolean } | null;
+      timeFrozen: () => boolean;
       tryEvolve: () => string | null;
       answer: (correct: boolean) => boolean;
       restart: () => void;
@@ -378,6 +534,9 @@ window.__engine = {
     projectiles: world.projectiles.active,
     gems: world.gems.active,
     over: world.over,
+    transcended: world.transcended,
+    timeFrozen: world.timeFrozen,
+    bossActive: world.boss.active,
     weapons: [...world.weapons],
     passives: [...world.passives],
   }),
@@ -400,6 +559,19 @@ window.__engine = {
     } as unknown as Parameters<typeof world.applyUpgrade>[0]);
   },
   tryEvolve: () => world.tryEvolve()?.result ?? null,
+  skipTo: (t) => world.skipTo(t),
+  events: () => eventLog.slice(),
+  boss: () =>
+    world.boss.active
+      ? {
+          active: true,
+          name: world.boss.def.name,
+          hp: Math.round(world.boss.hp),
+          maxHp: world.boss.maxHp,
+          shielded: world.boss.shielded,
+        }
+      : null,
+  timeFrozen: () => world.timeFrozen,
   quiz: () => ({
     total: selector.total,
     correct: selector.correct,

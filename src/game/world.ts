@@ -1,22 +1,28 @@
 /**
- * 전투 코어 (Phase 2).
+ * 전투 루프 + 타임라인 (Phase 2~4).
  *
- * 완료 기준: "퀴즈 없이 10분 생존 루프가 끝까지 돌아감"
- * 퀴즈·각성은 Phase 3 에서 레벨업 지점에 끼워 넣는다. 지금은 레벨업 시 자동으로
- * 보상 하나를 고른다(`upgrades.ts` 풀은 그대로 재사용).
+ * 시간이 멈추는 두 경우를 구분한다.
+ *  - `loop.setPaused()` : 퀴즈·카드 오버레이가 떠 있을 때. 시뮬레이션 자체가 멈춘다.
+ *  - `timeFrozen`       : 보스전. 적도 움직이고 전투도 계속되지만 **타이머만** 멈춘다.
+ *
+ * 보스를 잡는 데 걸린 시간이 생존 시간에서 깎이면 "보스를 피해 도망치기"가
+ * 최적 전략이 되어 버린다. 원작 블랙박스 측정에서 확인한 규칙이다.
  */
 import { Pool } from '../core/pool';
 import { SpatialGrid } from '../core/spatial';
 import { makeRng, randRange, type Rng } from '../core/rng';
 import type { Vec2 } from '../core/input';
 import { BALANCE as B } from './balance';
-import { ENEMY_KINDS, type EnemyKind } from './enemies';
+import { ENEMY_KINDS, type EnemyKind, type EnemyKindId } from './enemies';
 import { hpScale, pickKind, spawnRate } from './waves';
 import { makeProjectilePool, nextPid, stepProjectile, type Projectile } from './projectiles';
 import { computeStats, type PassiveId, type Stats } from './stats';
 import { STARTER_WEAPONS, WEAPON_BY_ID, type FireContext, type WeaponId } from './weapons';
 import { rollUpgrades, type Upgrade } from './upgrades';
 import { findEvolutions, type Evolution } from './evolution';
+import { Director, type TimelineEvent } from './director';
+import { BOSSES, makeBoss, type Boss, type BossKindId } from './boss';
+import { makePickupPool, type Pickup, type PickupKind } from './pickups';
 
 export type Enemy = {
   alive: boolean;
@@ -30,21 +36,12 @@ export type Enemy = {
   /** 넉백 속도 — 매 프레임 감쇠 */
   kx: number;
   ky: number;
-  /** 피격 연출용 잔여 시간 */
   flash: number;
-  /** 중복 타격 방지 */
   lastPid: number;
   lastHitAt: number;
 };
 
-export type Gem = {
-  alive: boolean;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  xp: number;
-};
+export type Gem = { alive: boolean; x: number; y: number; vx: number; vy: number; xp: number };
 
 export type Player = {
   x: number;
@@ -60,41 +57,54 @@ export type Player = {
 };
 
 export type RunEvent =
-  /** 레벨업 발생 — 여기서 게임을 멈추고 퀴즈 → 카드 순서로 진행한다 */
   | { type: 'levelup'; level: number }
   | { type: 'awaken'; evolution: Evolution }
+  /** 별 몬스터 처치 → 보너스 문제 */
+  | { type: 'bonus' }
+  /** 초월 수련 — 특별 문제 3개 */
+  | { type: 'trial' }
+  | { type: 'transcend' }
+  | { type: 'boss'; id: BossKindId; name: string }
+  | { type: 'bossdown'; id: BossKindId }
+  /** 최종보스 방어막 — 문제를 맞혀야 깨진다 */
+  | { type: 'shield' }
+  | { type: 'pickup'; kind: PickupKind }
   | { type: 'gameover'; reason: 'dead' | 'cleared' };
 
+const kindIndex = (id: EnemyKindId) => ENEMY_KINDS.findIndex((k) => k.id === id);
 const maxEnemyRadius = Math.max(...ENEMY_KINDS.map((k) => k.radius));
 
 export class World {
   readonly enemies: Pool<Enemy>;
   readonly projectiles: Pool<Projectile>;
   readonly gems: Pool<Gem>;
+  readonly pickups: Pool<Pickup>;
   readonly grid = new SpatialGrid(B.world.cellSize);
   readonly player: Player;
+  readonly boss: Boss = makeBoss();
 
-  /** 보유 무기/패시브 레벨 */
   readonly weapons = new Map<WeaponId, number>();
   readonly passives = new Map<PassiveId, number>();
-  /** 무기별 남은 쿨다운 */
   private cooldowns = new Map<WeaponId, number>();
   stats: Stats;
 
   time = 0;
   kills = 0;
   over: null | 'dead' | 'cleared' = null;
-  /** 화면 흔들림 요청량 (main 이 소비) */
   shakeRequest = 0;
+  pendingLevelUps = 0;
+  /** 보스전 중에는 타이머만 멈춘다 (전투는 계속) */
+  timeFrozen = false;
+  transcended = false;
 
+  private director = new Director();
   private spawnAcc = 0;
   private rng: Rng;
   private listeners: ((e: RunEvent) => void)[] = [];
+  private transcendBonus = { power: 1, rate: 1 };
+  private trialBonus = 0;
 
-  /** 성능 측정용 — 0이 아니면 이 수까지 즉시 채운다 */
   stressTarget = 0;
-  /** 처리 대기 중인 레벨업 수. 대량 획득으로 한 번에 여러 레벨이 오를 수 있다. */
-  pendingLevelUps = 0;
 
   constructor(seed = 1, starter: WeaponId = STARTER_WEAPONS[0]) {
     this.rng = makeRng(seed);
@@ -118,10 +128,11 @@ export class World {
     );
     this.projectiles = makeProjectilePool();
     this.gems = new Pool<Gem>(() => ({ alive: false, x: 0, y: 0, vx: 0, vy: 0, xp: 1 }), 256);
+    this.pickups = makePickupPool();
 
     this.weapons.set(starter, 1);
     this.cooldowns.set(starter, 0);
-    this.stats = computeStats(this.passives);
+    this.stats = this.recomputeStats();
 
     this.player = {
       x: 0,
@@ -144,33 +155,61 @@ export class World {
     for (const fn of this.listeners) fn(e);
   }
 
+  private recomputeStats(): Stats {
+    const s = computeStats(this.passives);
+    s.power *= this.transcendBonus.power;
+    s.rate *= this.transcendBonus.rate;
+    return s;
+  }
+
   /* ─────────────────────────── 메인 업데이트 ─────────────────────────── */
 
   update(dt: number, axis: Vec2) {
     if (this.over) return;
 
-    this.time += dt;
-    if (this.time >= B.world.runSeconds) {
-      this.over = 'cleared';
-      this.emit({ type: 'gameover', reason: 'cleared' });
-      return;
+    // 보스전 동안에는 타이머만 멈춘다
+    if (!this.timeFrozen) {
+      this.time += dt;
+      for (const e of this.director.step(this.time)) this.handleCue(e);
     }
 
     this.movePlayer(dt, axis);
     this.spawn(dt);
 
-    // 충돌 그리드는 적 위치 기준으로 매 프레임 다시 만든다
     this.grid.clear();
     this.enemies.forEach((e, i) => this.grid.insert(i, e.x, e.y));
 
     this.fireWeapons(dt);
     this.stepProjectiles(dt);
     this.stepEnemies(dt);
+    this.stepBoss(dt);
     this.stepGems(dt);
+    this.stepPickups(dt);
 
     this.projectiles.compact();
     this.enemies.compact();
     this.gems.compact();
+    this.pickups.compact();
+  }
+
+  private handleCue(e: TimelineEvent) {
+    switch (e.type) {
+      case 'boss':
+        this.spawnBoss(e.id);
+        break;
+      case 'trial':
+        this.emit({ type: 'trial' });
+        break;
+      case 'transcend':
+        this.transcend();
+        break;
+      case 'star':
+        this.spawnSpecial('star');
+        break;
+      case 'cat':
+        this.spawnSpecial('cat');
+        break;
+    }
   }
 
   private movePlayer(dt: number, axis: Vec2) {
@@ -186,7 +225,6 @@ export class World {
   /* ─────────────────────────── 스폰 ─────────────────────────── */
 
   private spawn(dt: number) {
-    // 생존 상한은 시간에 따라 열린다 — 초반부터 화면이 가득 차면 피할 공간이 없다
     const cap = this.stressTarget || B.spawn.aliveCapAt(this.time);
     if (this.enemies.active >= cap) return;
 
@@ -196,11 +234,12 @@ export class World {
       return;
     }
 
-    this.spawnAcc += spawnRate(this.time) * dt;
+    // 보스전 중에는 일반 적을 줄인다 — 보스에 집중할 여지를 준다
+    const scale = this.boss.active ? B.boss.spawnScaleDuringBoss : 1;
+    this.spawnAcc += spawnRate(this.time) * scale * dt;
     while (this.spawnAcc >= 1 && this.enemies.active < cap) {
       this.spawnAcc -= 1;
       const kind = pickKind(this.time, this.rng);
-      // 무리형은 뭉쳐서 등장
       const n = Math.min(kind.cluster, cap - this.enemies.active);
       const a = this.rng() * Math.PI * 2;
       const r = randRange(this.rng, B.spawn.ringMin, B.spawn.ringMax);
@@ -225,25 +264,66 @@ export class World {
     e.flash = 0;
     e.lastPid = 0;
     e.lastHitAt = -99;
+    return e;
+  }
+
+  private spawnSpecial(id: 'star' | 'cat') {
+    const kind = ENEMY_KINDS[kindIndex(id)];
+    // 화면 밖에서 등장하되 너무 멀지 않게 — 놓치면 아깝다는 느낌이 있어야 한다
+    this.spawnOne(kind, this.rng() * Math.PI * 2, B.spawn.ringMin * 0.85);
+  }
+
+  private spawnBoss(id: BossKindId) {
+    const def = BOSSES[id];
+    const b = this.boss;
+    const a = this.rng() * Math.PI * 2;
+    b.active = true;
+    b.def = def;
+    b.x = this.player.x + Math.cos(a) * B.boss.spawnDistance;
+    b.y = this.player.y + Math.sin(a) * B.boss.spawnDistance;
+    b.px = b.x;
+    b.py = b.y;
+    b.maxHp = def.hp;
+    b.hp = def.hp;
+    b.flash = 0;
+    b.pendingShields = [...def.shieldAt];
+    b.shielded = false;
+    b.lastPid = 0;
+    b.lastHitAt = -99;
+
+    this.timeFrozen = true; // 보스전 동안 타이머 정지
+    this.emit({ type: 'boss', id, name: def.name });
+
+    // 최종보스는 등장과 동시에 방어막을 올린다
+    this.checkShield();
   }
 
   /* ─────────────────────────── 무기 ─────────────────────────── */
 
-  /** 가장 가까운 적 방향. 없으면 null */
   private aim(): number | null {
     const p = this.player;
-    let best = -1;
+    let bestX = 0;
+    let bestY = 0;
     let bestD = Infinity;
-    this.enemies.forEach((e, i) => {
+    this.enemies.forEach((e) => {
       const d = (e.x - p.x) ** 2 + (e.y - p.y) ** 2;
       if (d < bestD) {
         bestD = d;
-        best = i;
+        bestX = e.x;
+        bestY = e.y;
       }
     });
-    if (best < 0) return null;
-    const e = this.enemies.at(best);
-    return Math.atan2(e.y - p.y, e.x - p.x);
+    // 보스도 조준 대상 — 보스만 남았을 때 무기가 놀면 안 된다
+    if (this.boss.active) {
+      const d = (this.boss.x - p.x) ** 2 + (this.boss.y - p.y) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        bestX = this.boss.x;
+        bestY = this.boss.y;
+      }
+    }
+    if (bestD === Infinity) return null;
+    return Math.atan2(bestY - p.y, bestX - p.x);
   }
 
   private fireWeapons(dt: number) {
@@ -310,7 +390,6 @@ export class World {
         const rr = pr.radius + kind.radius;
         if ((pr.x - e.x) ** 2 + (pr.y - e.y) ** 2 > rr * rr) return;
 
-        // 같은 투사체가 같은 적을 연속으로 때리지 않게 한다
         if (e.lastPid === pr.pid) {
           if (pr.rehit <= 0) return;
           if (this.time - e.lastHitAt < pr.rehit) return;
@@ -319,23 +398,39 @@ export class World {
         e.lastHitAt = this.time;
 
         this.damage(e, pr.damage);
-
         if (pr.knockback > 0) {
           const d = Math.hypot(e.x - pr.x, e.y - pr.y) || 1;
           e.kx += ((e.x - pr.x) / d) * pr.knockback;
           e.ky += ((e.y - pr.y) / d) * pr.knockback;
         }
-
         if (pr.splash > 0) {
           this.splash(pr.x, pr.y, pr.splash, pr.damage * 0.6, pr.pid);
           pr.alive = false;
           this.shakeRequest += 0.12;
           return;
         }
-
         if (pr.pierce > 0) pr.pierce--;
         else pr.alive = false;
       });
+
+      // 보스 피격
+      if (pr.alive && this.boss.active) {
+        const b = this.boss;
+        const rr = pr.radius + b.def.radius;
+        if ((pr.x - b.x) ** 2 + (pr.y - b.y) ** 2 <= rr * rr) {
+          const fresh = b.lastPid !== pr.pid || (pr.rehit > 0 && this.time - b.lastHitAt >= pr.rehit);
+          if (fresh) {
+            b.lastPid = pr.pid;
+            b.lastHitAt = this.time;
+            this.damageBoss(pr.damage);
+          }
+          if (pr.splash > 0) {
+            this.splash(pr.x, pr.y, pr.splash, pr.damage * 0.6, pr.pid);
+            pr.alive = false;
+          } else if (pr.pierce > 0) pr.pierce--;
+          else pr.alive = false;
+        }
+      }
     });
   }
 
@@ -352,12 +447,55 @@ export class World {
     });
   }
 
+  private rollDamage(amount: number) {
+    return this.rng() < this.stats.crit ? amount * this.stats.critMul : amount;
+  }
+
   private damage(e: Enemy, amount: number) {
-    let dmg = amount;
-    if (this.rng() < this.stats.crit) dmg *= this.stats.critMul;
-    e.hp -= dmg;
+    e.hp -= this.rollDamage(amount);
     e.flash = 0.12;
     if (e.hp <= 0) this.kill(e);
+  }
+
+  private damageBoss(amount: number) {
+    const b = this.boss;
+    if (b.shielded) return; // 방어막 — 문제를 맞혀야 깨진다
+    b.hp -= this.rollDamage(amount);
+    b.flash = 0.1;
+    if (b.hp <= 0) this.killBoss();
+    else this.checkShield();
+  }
+
+  private checkShield() {
+    const b = this.boss;
+    if (!b.pendingShields.length || b.shielded) return;
+    const ratio = b.hp / b.maxHp;
+    if (ratio <= b.pendingShields[0]) {
+      b.pendingShields.shift();
+      b.shielded = true;
+      this.emit({ type: 'shield' });
+    }
+  }
+
+  /** 방어막 해제 — 문제를 맞혔을 때 바깥에서 호출 */
+  breakShield() {
+    this.boss.shielded = false;
+    this.shakeRequest += 0.4;
+  }
+
+  private killBoss() {
+    const b = this.boss;
+    b.active = false;
+    this.timeFrozen = false;
+    this.kills++;
+    this.addXp(b.def.xp);
+    this.shakeRequest += 0.6;
+    this.emit({ type: 'bossdown', id: b.def.id });
+
+    if (b.def.id === 'final') {
+      this.over = 'cleared';
+      this.emit({ type: 'gameover', reason: 'cleared' });
+    }
   }
 
   private kill(e: Enemy) {
@@ -370,9 +508,20 @@ export class World {
     g.vx = 0;
     g.vy = 0;
     g.xp = kind.xp;
+
+    if (kind.id === 'star') this.emit({ type: 'bonus' });
+    else if (kind.id === 'cat') this.dropPickup('fish', e.x, e.y);
   }
 
-  /* ─────────────────────────── 적 ─────────────────────────── */
+  dropPickup(kind: PickupKind, x: number, y: number) {
+    const p = this.pickups.spawn();
+    p.kind = kind;
+    p.x = x;
+    p.y = y;
+    p.age = 0;
+  }
+
+  /* ─────────────────────────── 적 · 보스 ─────────────────────────── */
 
   private stepEnemies(dt: number) {
     const p = this.player;
@@ -389,8 +538,12 @@ export class World {
       const dist = Math.hypot(dx, dy) || 1;
       dx /= dist;
       dy /= dist;
+      // 도망치는 적(고양이)은 가까울 때만 반대로 달린다
+      if (kind.flee && dist < B.special.cat.fleeRadius) {
+        dx = -dx;
+        dy = -dy;
+      }
 
-      // 이웃과 밀어내기 — 전부 겹쳐 한 점이 되는 것을 막는다
       const sepR = kind.radius * 2;
       let sx = 0;
       let sy = 0;
@@ -407,25 +560,14 @@ export class World {
         sy += (oy / d) * w;
       });
 
-      const vx = dx * kind.speed + sx * B.enemy.separation + e.kx;
-      const vy = dy * kind.speed + sy * B.enemy.separation + e.ky;
-      e.x += vx * dt;
-      e.y += vy * dt;
+      e.x += (dx * kind.speed + sx * B.enemy.separation + e.kx) * dt;
+      e.y += (dy * kind.speed + sy * B.enemy.separation + e.ky) * dt;
       e.kx *= damp;
       e.ky *= damp;
 
-      // 접촉 데미지
       if (p.invuln <= 0) {
         const hitR = kind.radius + B.player.radius;
-        if ((p.x - e.x) ** 2 + (p.y - e.y) ** 2 < hitR * hitR) {
-          p.hp = Math.max(0, p.hp - kind.damage);
-          p.invuln = B.player.invulnAfterHit;
-          this.shakeRequest += 0.25;
-          if (p.hp <= 0) {
-            this.over = 'dead';
-            this.emit({ type: 'gameover', reason: 'dead' });
-          }
-        }
+        if ((p.x - e.x) ** 2 + (p.y - e.y) ** 2 < hitR * hitR) this.hurtPlayer(kind.damage);
       }
 
       if (
@@ -437,7 +579,35 @@ export class World {
     });
   }
 
-  /* ─────────────────────────── 보석 · 레벨업 ─────────────────────────── */
+  private stepBoss(dt: number) {
+    const b = this.boss;
+    if (!b.active) return;
+    b.px = b.x;
+    b.py = b.y;
+    if (b.flash > 0) b.flash -= dt;
+
+    const p = this.player;
+    const dx = p.x - b.x;
+    const dy = p.y - b.y;
+    const d = Math.hypot(dx, dy) || 1;
+    b.x += (dx / d) * b.def.speed * dt;
+    b.y += (dy / d) * b.def.speed * dt;
+
+    if (p.invuln <= 0 && d < b.def.radius + B.player.radius) this.hurtPlayer(b.def.damage);
+  }
+
+  private hurtPlayer(amount: number) {
+    const p = this.player;
+    p.hp = Math.max(0, p.hp - amount);
+    p.invuln = B.player.invulnAfterHit;
+    this.shakeRequest += 0.25;
+    if (p.hp <= 0) {
+      this.over = 'dead';
+      this.emit({ type: 'gameover', reason: 'dead' });
+    }
+  }
+
+  /* ─────────────────────────── 보석 · 아이템 ─────────────────────────── */
 
   private stepGems(dt: number) {
     const p = this.player;
@@ -472,10 +642,45 @@ export class World {
     });
   }
 
+  private stepPickups(dt: number) {
+    const p = this.player;
+    const r = B.special.pickupRadius + B.player.radius;
+    this.pickups.forEach((it) => {
+      it.age += dt;
+      if ((p.x - it.x) ** 2 + (p.y - it.y) ** 2 < r * r) {
+        it.alive = false;
+        this.applyPickup(it.kind);
+      }
+    });
+  }
+
+  private applyPickup(kind: PickupKind) {
+    if (kind === 'fish') {
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + B.special.fishHeal);
+    } else if (kind === 'magnet') {
+      // 맵 전체 자석 — 흩어진 보석을 한꺼번에 회수한다.
+      // 원작 측정에서 이 한 방에 레벨이 1~2 올랐다. 밸런싱 시 상한 검증 대상.
+      let xp = 0;
+      this.gems.forEach((g) => {
+        xp += g.xp;
+        g.alive = false;
+      });
+      this.gems.compact();
+      if (xp) this.addXp(xp);
+    } else {
+      // 맵 전체 폭탄
+      this.enemies.forEach((e) => this.damage(e, B.special.bombDamage));
+      if (this.boss.active) this.damageBoss(B.special.bombDamage * 0.5);
+      this.shakeRequest += 0.5;
+    }
+    this.emit({ type: 'pickup', kind });
+  }
+
+  /* ─────────────────────────── 성장 ─────────────────────────── */
+
   private addXp(amount: number) {
     const p = this.player;
     p.xp += amount;
-    // 한 번에 여러 레벨이 오를 수 있다 (맵 전체 자석 같은 대량 획득)
     while (p.xp >= p.xpNext) {
       p.xp -= p.xpNext;
       p.level++;
@@ -487,23 +692,23 @@ export class World {
   /**
    * 레벨업은 여기서 **적용하지 않는다.**
    * 바깥(main)이 게임을 멈추고 퀴즈를 띄운 뒤, 정답이면 카드 3택을 받아 적용한다.
-   * 퀴즈가 열려 있는 동안 타이머가 멈추는 것이 이 게임의 핵심 규칙이다
-   * (원작 블랙박스 측정 3장 — 문제 푸는 시간이 생존 시간을 깎지 않는다).
    */
   private levelUp() {
     this.pendingLevelUps++;
     this.emit({ type: 'levelup', level: this.player.level });
   }
 
-  /** 보상 후보 3장 */
+  /** 테스트용 — 특정 시각으로 건너뛴다. 지나친 타임라인 큐는 발동하지 않는다. */
+  skipTo(t: number) {
+    this.time = t;
+    this.director.skipTo(t);
+  }
+
   rollChoices(n = 3): Upgrade[] {
     return rollUpgrades({ weapons: this.weapons, passives: this.passives }, this.rng, n);
   }
 
-  /**
-   * 각성 판정 — 레벨업 문제를 맞힌 뒤에만 호출한다.
-   * 조건을 만족하는 조합이 있으면 하나 진화시키고 그 조합을 돌려준다.
-   */
+  /** 각성 판정 — 레벨업 문제를 맞힌 뒤에만 호출한다. */
   tryEvolve(): Evolution | null {
     const found = findEvolutions(this.weapons, this.passives);
     if (!found.length) return null;
@@ -516,6 +721,27 @@ export class World {
     return e;
   }
 
+  /**
+   * 초월 수련 결과 반영 — 맞힌 문제 수만큼 초월이 강해진다.
+   * 문제를 푸는 것이 곧 힘이 되는 구조를 마지막 구간에서 한 번 더 보여 준다.
+   */
+  addTranscendBonus(correct: number) {
+    this.trialBonus = correct;
+  }
+
+  /** 초월 — 9분 파워스파이크. 최종보스를 상대할 수 있게 해 준다. */
+  private transcend() {
+    this.transcended = true;
+    // 초월 수련에서 맞힌 문제 1개당 +10%
+    this.transcendBonus = {
+      power: B.transcend.power + this.trialBonus * 0.1,
+      rate: B.transcend.rate,
+    };
+    this.stats = this.recomputeStats();
+    this.player.hp = this.player.maxHp;
+    this.emit({ type: 'transcend' });
+  }
+
   applyUpgrade(u: Upgrade) {
     if (u.type === 'weapon') {
       this.weapons.set(u.id, u.level);
@@ -523,30 +749,36 @@ export class World {
     } else {
       const before = this.stats.maxHp;
       this.passives.set(u.id, u.level);
-      this.stats = computeStats(this.passives);
-      // 최대 체력이 늘면 그만큼 즉시 회복한다 (원작 하트 배지와 같은 방식)
-      const grew = this.stats.maxHp / before;
-      if (grew > 1) {
+      this.stats = this.recomputeStats();
+      // 최대 체력이 늘면 그만큼 즉시 회복한다
+      if (this.stats.maxHp / before > 1) {
         const newMax = B.player.maxHp * this.stats.maxHp;
         const delta = newMax - this.player.maxHp;
         this.player.maxHp = newMax;
         this.player.hp = Math.min(newMax, this.player.hp + delta);
       }
     }
-    this.stats = computeStats(this.passives);
+    this.stats = this.recomputeStats();
   }
 
   reset(seed = 1, starter: WeaponId = STARTER_WEAPONS[0]) {
     this.enemies.clear();
     this.projectiles.clear();
     this.gems.clear();
+    this.pickups.clear();
     this.weapons.clear();
     this.passives.clear();
     this.cooldowns.clear();
     this.weapons.set(starter, 1);
     this.cooldowns.set(starter, 0);
-    this.stats = computeStats(this.passives);
+    this.transcendBonus = { power: 1, rate: 1 };
+    this.trialBonus = 0;
+    this.transcended = false;
+    this.stats = this.recomputeStats();
     this.rng = makeRng(seed);
+    this.director.reset();
+    this.boss.active = false;
+    this.timeFrozen = false;
 
     const p = this.player;
     p.x = p.y = p.px = p.py = 0;
