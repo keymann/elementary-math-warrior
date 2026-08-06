@@ -1,0 +1,13 @@
+# Cloudflare 정적 자산 캐시 정책
+#
+# Vite 산출물의 /assets/* 는 파일명에 해시가 붙으므로 영구 캐시해도 안전하다.
+# HTML 은 매번 최신을 받아야 새 빌드가 즉시 반영된다.
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.html
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache

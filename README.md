@@ -2,7 +2,7 @@
 
 초등 수학 서바이버형 학습 게임. 이동만 조작하고 공격은 자동, 레벨업 때 수학 문제를 풀어 강화를 얻는다.
 
-- 배포: **Cloudflare Pages**
+- 배포: **Cloudflare Workers Static Assets** (`wrangler.jsonc`, assets-only)
 - 문서: [`docs/수학서바이버-클론-작업계획.md`](docs/수학서바이버-클론-작업계획.md) · [`docs/수학서바이버-블랙박스-측정표.md`](docs/수학서바이버-블랙박스-측정표.md)
 
 ## 현재 상태
@@ -14,7 +14,8 @@ npm install
 npm run dev        # → http://localhost:5173      게임 (엔진 스캐폴드)
                    #   http://localhost:5173/poc.html  어댑터 PoC 검수 페이지
 npm run typecheck
-npm run build      # dist/ (index.html + poc.html)
+npm run build      # dist/ (index.html + poc.html + 404.html + _headers)
+npm run deploy     # 빌드 후 wrangler deploy
 ```
 
 `npm run dev`는 `host: true`로 열리므로 같은 네트워크의 실제 모바일·태블릿에서 접속해 확인할 수 있다.
