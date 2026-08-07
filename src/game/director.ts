@@ -37,9 +37,14 @@ export const CUES: Cue[] = [
  * 미믹은 잡을 때마다 보너스 문제가 나온다. 38초 주기면 10분에 15문항이라
  * 레벨업 문항(약 18개)과 합쳐 33문항 — 게임 시간 18초마다 한 번꼴로 너무 잦았다.
  * 첫 등장은 초반 공백을 막기 위해 그대로 이르게 두고, 주기만 늘린다.
+ *
+ * 빈도를 한 번 더(총 2배) 낮추면서 78 → 112 로 늘렸다.
+ * **주의: 미믹은 문항 공급원이자 XP 공급원이다.** 주기를 늘리면 자석 아이템도 같이
+ * 줄어 레벨업이 떨어진다(78초로 올렸을 때 18.2 → 15.0 회). 그래서 문항 감축의
+ * 주력은 `level.quizEveryLevels` 로 옮기고, 여기서는 보조로만 손댄다.
  */
 export const STAR_FIRST = 16;
-export const STAR_EVERY = 78;
+export const STAR_EVERY = 155;
 export const CAT_FIRST = 42;
 export const CAT_EVERY = 55;
 

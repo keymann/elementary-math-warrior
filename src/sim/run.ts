@@ -121,12 +121,14 @@ export function runOnce(cfg: RunConfig): RunResult {
     world.update(FIXED_DT, axis);
     steps++;
 
-    // 레벨업 처리 — 정답이면 강화, 오답이면 못 받는다
-    while (world.pendingLevelUps > 0) {
-      world.pendingLevelUps--;
+    // 레벨업 처리 — 문제가 붙는 레벨업만 정답 판정을 한다.
+    // 문제 없는 레벨업은 조건 없이 강화를 받는다(성장 속도를 유지하기 위한 설계)
+    for (let lv = world.takeLevelUp(); lv; lv = world.takeLevelUp()) {
       levelUps++;
-      questions++;
-      if (rng() >= cfg.accuracy) continue;
+      if (lv.withQuiz) {
+        questions++;
+        if (rng() >= cfg.accuracy) continue;
+      }
       const choices = world.rollChoices(3);
       if (choices.length) {
         world.applyUpgrade(pickUpgrade(world, choices, rng));

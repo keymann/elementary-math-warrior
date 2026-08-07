@@ -38,8 +38,16 @@ const BOUNDS = [120, 240, 360, 480];
 const ORDER: BiomeId[] = ['forest', 'desert', 'basalt', 'lava', 'sky'];
 
 export function biomeAt(time: number): BiomeId {
-  for (let i = 0; i < BOUNDS.length; i++) if (time < BOUNDS[i]) return ORDER[i];
-  return ORDER[ORDER.length - 1];
+  return ORDER[roundAt(time)];
+}
+
+/**
+ * 현재 라운드 번호(0~4). 지형 구간과 **같은 경계**를 쓴다.
+ * 난이도 계단과 배경 전환이 어긋나면 학생이 "왜 갑자기 어려워졌는지" 알 수 없다.
+ */
+export function roundAt(time: number): number {
+  for (let i = 0; i < BOUNDS.length; i++) if (time < BOUNDS[i]) return i;
+  return ORDER.length - 1;
 }
 
 /** 경계 앞뒤 6초 동안 서서히 바뀐다 */

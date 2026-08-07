@@ -11,7 +11,7 @@
  */
 import type { Rng } from '../core/rng';
 import { makeQuizzes } from './adapter';
-import { EXTRA_GENERATORS, EXTRA_RATIO, type ExtraGenId } from './extra';
+import { EXTRA_GENERATORS, EXTRA_RATIO, extraIdsFor, type ExtraGenId } from './extra';
 import type { GameQuiz } from './types';
 
 export type Grade = 3 | 4 | 5 | 6;
@@ -72,8 +72,10 @@ export class QuizSelector {
 
   /** 보완 영역 문항을 중복 없이 뽑는다. 실패하면 null */
   private nextExtra(key?: ExtraGenId): GameQuiz | null {
-    const keys = Object.keys(EXTRA_GENERATORS) as ExtraGenId[];
-    const id = key ?? keys[Math.floor(this.rng() * keys.length)];
+    // 학년에 열린 유형만 후보로 쓴다 — 3학년에게 백분율을 내면 안 된다
+    const keys = extraIdsFor(this.grade);
+    if (!keys.length) return null;
+    const id = key && keys.includes(key) ? key : keys[Math.floor(this.rng() * keys.length)];
     // 도형의 이동처럼 변형이 적은 유형은 금방 소진된다. 몇 번 시도하고 포기한다
     for (let i = 0; i < 12; i++) {
       const q = EXTRA_GENERATORS[id](this.grade, this.rng);
