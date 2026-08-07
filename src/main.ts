@@ -19,7 +19,7 @@ import { drawBoss, drawCreature, drawHero, type ActorState, type CreatureId } fr
 import { drawTerrain, BIOMES, biomeAt, roundAt } from './render/terrain';
 import { DecalField } from './render/decals';
 import { drawGem, drawPickup, drawProjectile } from './render/items';
-import { World, type RunEvent } from './game/world';
+import { World, HURT_TIME, type RunEvent } from './game/world';
 import { BALANCE as B } from './game/balance';
 import { ENEMY_KINDS } from './game/enemies';
 import { PICKUP_EMOJI, PICKUP_LABEL } from './game/pickups';
@@ -476,7 +476,7 @@ const loop = new Loop({
       decals.trail(world.player.x, world.player.y, biomeAt(world.time), decalRnd);
     }
   },
-  render: (alpha) => render(alpha),
+  render: (alpha, frameDt) => render(alpha, frameDt),
   onStats: (s) => {
     stats = s;
     if (s.fps < B.perf.lowFpsThreshold) {
@@ -503,7 +503,7 @@ document.addEventListener('visibilitychange', () => {
 
 /* ─────────────────────────── 렌더 ─────────────────────────── */
 
-function render(alpha: number) {
+function render(alpha: number, frameDt = 1 / 60) {
   const { ctx } = vp;
   vp.begin();
 
@@ -515,7 +515,8 @@ function render(alpha: number) {
     if (!getSettings().reduceShake) vp.addShake(world.shakeRequest);
     world.shakeRequest = 0;
   }
-  vp.follow(pxPos, pyPos, 1 / 60);
+  // 카메라는 렌더 주기로 움직인다 — 고정 1/60 을 쓰면 120Hz 에서 두 배 빨라진다
+  vp.follow(pxPos, pyPos, frameDt);
 
   // 단계별 지형 — 3·6·9분에 바뀐다
   drawTerrain(ctx, world.time, vp.camX, vp.camY, vp.scale, vp.width, vp.height, vp.dpr);
@@ -568,7 +569,7 @@ function render(alpha: number) {
       // 색약 모드: 색만으로 구분되지 않도록 테두리 두께를 종류별로 다르게 준다
       if (getSettings().colorSafe) ring(ctx, sx, sy, kind.radius * S, '#fff', 1 + (e.kind % 3));
     } else {
-      drawCreature(ctx, kind.id as CreatureId, sx, sy, kind.radius * 2.2 * S, e.anim, e.flash > 0, vp.dpr, cs);
+      drawCreature(ctx, kind.id as CreatureId, sx, sy, kind.radius * 2.2 * S, e.anim, e.flash > 0, vp.dpr, cs, e.hurt / HURT_TIME);
     }
   });
 

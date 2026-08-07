@@ -239,16 +239,30 @@ export function drawTerrain(
   dpr: number,
 ) {
   const { from, to, t } = biomeBlend(time);
+
+  /**
+   * 패턴 한 장을 화면 전체에 반복해 깐다.
+   *
+   * **반복 주기와 감싸는 주기가 어긋나면 배경이 통째로 튄다.**
+   * 패턴 원본은 `TILE * dpr` px 짜리다. 여기에 `dpr * scale` 변환을 걸면 한 타일이
+   * 화면에서 `TILE * dpr * scale` CSS px 를 덮는데, 오프셋은 `TILE * scale` 마다
+   * 감싸고 있었다. dpr 2 인 기기에서 카메라가 반 타일 지날 때마다 배경이 반 타일씩
+   * 순간이동했고, 이것이 "지형이 플레이어와 따로 놀며 끊겨 보이는" 증상이었다.
+   *
+   * 원본 1px 이 화면 `scale` 배가 되도록 변환을 잡으면 실제 주기가 `TILE * scale`
+   * CSS px 로 맞는다. 변환 단위가 원본 px 이므로 오프셋·크기는 기기 픽셀로 환산한다.
+   */
   const layer = (b: Biome, alpha: number) => {
     ctx.save();
     ctx.globalAlpha = alpha;
     const pat = ctx.createPattern(patternFor(b, dpr), 'repeat')!;
-    const step = TILE * scale;
+    const step = TILE * scale; // 화면상 실제 반복 주기 (CSS px)
     const ox = (((-camX * scale + w / 2) % step) + step) % step;
     const oy = (((-camY * scale + h / 2) % step) + step) % step;
-    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, (ox - step) * dpr, (oy - step) * dpr);
+    ctx.setTransform(scale, 0, 0, scale, (ox - step) * dpr, (oy - step) * dpr);
     ctx.fillStyle = pat;
-    ctx.fillRect(0, 0, (w + step * 2) / scale, (h + step * 2) / scale);
+    // 사용자 단위 = 패턴 원본 px. 화면을 덮고 앞뒤로 한 타일씩 여유를 둔다
+    ctx.fillRect(0, 0, (w * dpr) / scale + TILE * dpr * 2, (h * dpr) / scale + TILE * dpr * 2);
     ctx.restore();
   };
 
@@ -268,14 +282,17 @@ export function drawTerrain(
   if (cell >= 8) {
     const offX = (((-camX * scale + w / 2) % cell) + cell) % cell;
     const offY = (((-camY * scale + h / 2) % cell) + cell) % cell;
+    // 정수 픽셀로 반올림하면 선이 선명해지는 대신 카메라가 움직일 때
+    // 격자가 1px 씩 계단으로 튄다. 캐릭터는 부드럽게 흐르는데 배경만 덜컹거려
+    // 화면이 끊겨 보인다. **선명함보다 부드러움을 택한다.**
     ctx.beginPath();
     for (let x = offX - cell; x <= w + cell; x += cell) {
-      ctx.moveTo(Math.round(x) + 0.5, 0);
-      ctx.lineTo(Math.round(x) + 0.5, h);
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
     }
     for (let y = offY - cell; y <= h + cell; y += cell) {
-      ctx.moveTo(0, Math.round(y) + 0.5);
-      ctx.lineTo(w, Math.round(y) + 0.5);
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
     }
     ctx.strokeStyle = BIOMES[to].grid;
     ctx.lineWidth = 1;

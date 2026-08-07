@@ -158,6 +158,29 @@ export function drawHero(
   }
 }
 
+/**
+ * 주인공 초상 — HTML 화면(무기 고르기 카드 등)에 넣을 이미지.
+ *
+ * 시작 화면에 🦔 이모지를 세워 두면 게임에 들어간 순간 다른 캐릭터가 나온다.
+ * **고를 때 본 모습과 조종하는 모습이 같아야** 한다. 캔버스에 한 번 구워 재사용한다.
+ */
+let heroPortrait: string | null = null;
+export function heroPortraitUrl(size = 96): string {
+  if (heroPortrait) return heroPortrait;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cv = document.createElement('canvas');
+  cv.width = Math.ceil(size * dpr);
+  cv.height = Math.ceil(size * dpr);
+  const c = cv.getContext('2d')!;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // 정지 자세로 그린다 — 카드 안에서 다리가 벌어져 있으면 어색하다
+  drawHero(c, size / 2, size * 0.6, size * 0.78, {
+    walk: 0, facing: 1, hurt: 0, hurtT: 0, hurtDx: 1, levelUp: 0, colorSafe: false,
+  });
+  heroPortrait = cv.toDataURL();
+  return heroPortrait;
+}
+
 /* ─────────────────────────── 적 ─────────────────────────── */
 
 export type CreatureId = 'basic' | 'swift' | 'tank' | 'swarm' | 'mimic' | 'cat';
@@ -223,6 +246,13 @@ function paintColorSafeMarks(ctx: CanvasRenderingContext2D, id: CreatureId, size
 /** 애니메이션 한 프레임에 해당하는 이동 거리(월드 단위) */
 const ANIM_STEP = 13;
 
+/**
+ * 미믹이 놀라 뚜껑을 활짝 여는 프레임.
+ * 뚜껑 열림은 `(sin(phase)+1)/2` 이고 phase 는 `frame/FRAMES * 2π` 이므로
+ * 6프레임 기준 1번이 가장 크게 벌어진다(0.93).
+ */
+const MIMIC_SHOCK_FRAME = 1;
+
 export function drawCreature(
   ctx: CanvasRenderingContext2D,
   id: CreatureId,
@@ -234,12 +264,49 @@ export function drawCreature(
   flash: boolean,
   dpr = 1,
   colorSafe = false,
+  /** 피격 반동 진행도 0~1 (1 = 막 맞은 순간) */
+  hurt = 0,
 ) {
   // 개체마다 위상을 어긋나게 해 무리가 한 몸처럼 움직이지 않게 한다
-  const phase = Math.floor((anim / ANIM_STEP + cx * 0.017 + cy * 0.011) % FRAMES + FRAMES) % FRAMES;
+  let phase = Math.floor((anim / ANIM_STEP + cx * 0.017 + cy * 0.011) % FRAMES + FRAMES) % FRAMES;
+
+  /**
+   * 피격 반동 — 번쩍임만으로는 "맞았다"가 몸에 남지 않는다.
+   * 눌렸다가 튀어오르는 스쿼시로 표현한다. 캐시된 스프라이트는 그대로 두고
+   * **그릴 때 변환만** 걸어서, 프레임 캐시가 종류×상태로 불어나지 않게 한다.
+   */
+  const h01 = Math.max(0, Math.min(1, hurt));
+  if (h01 > 0 && id === 'mimic') {
+    // 미믹은 상자인 척하다 맞으면 놀라 뚜껑을 확 연다
+    phase = MIMIC_SHOCK_FRAME;
+  }
+
   const sp = creatureSprite(id, size, dpr, phase, colorSafe);
   const w = sp.width / dpr;
   const h = sp.height / dpr;
+
+  if (h01 > 0.01) {
+    const kick = Math.sin(h01 * Math.PI * 1.4) * h01;
+    // 미믹은 몸집이 커서 반동도 크게 준다
+    const amp = id === 'mimic' ? 1 : 0.55;
+    const sx = 1 + kick * 0.22 * amp; // 옆으로 퍼지고
+    const sy = 1 - kick * 0.16 * amp; // 위아래로 눌린다
+    const lift = kick * size * 0.14 * amp; // 살짝 떠오른다
+    ctx.save();
+    ctx.translate(cx, cy - lift);
+    ctx.scale(sx, sy);
+    ctx.drawImage(sp, -w / 2, -h / 2, w, h);
+    ctx.restore();
+    if (flash) {
+      ctx.save();
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(cx - size * 0.5 * sx, cy - lift - size * 0.5 * sy, size * sx, size * sy);
+      ctx.restore();
+    }
+    return;
+  }
+
   ctx.drawImage(sp, cx - w / 2, cy - h / 2, w, h);
 
   if (flash) {

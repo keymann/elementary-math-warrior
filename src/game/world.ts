@@ -38,6 +38,8 @@ export type Enemy = {
   kx: number;
   ky: number;
   flash: number;
+  /** 피격 반동 잔여 시간(초). flash 보다 길게 남아 움찔하는 동작이 보인다 */
+  hurt: number;
   /** 이동 거리 누적 — 애니메이션 위상. 걸을 때만 모션이 돈다 */
   anim: number;
   lastPid: number;
@@ -85,6 +87,9 @@ export type RunEvent =
   | { type: 'hidden' }
   | { type: 'pickup'; kind: PickupKind }
   | { type: 'gameover'; reason: 'dead' | 'cleared' };
+
+/** 적 피격 반동 지속(초). 번쩍임(0.12)보다 길어야 동작이 눈에 남는다 */
+export const HURT_TIME = 0.28;
 
 const kindIndex = (id: EnemyKindId) => ENEMY_KINDS.findIndex((k) => k.id === id);
 const maxEnemyRadius = Math.max(...ENEMY_KINDS.map((k) => k.radius));
@@ -155,6 +160,7 @@ export class World {
         kx: 0,
         ky: 0,
         flash: 0,
+        hurt: 0,
         anim: 0,
         lastPid: 0,
         lastHitAt: -99,
@@ -322,6 +328,7 @@ export class World {
     e.kx = 0;
     e.ky = 0;
     e.flash = 0;
+    e.hurt = 0;
     e.anim = 0;
     e.lastPid = 0;
     e.lastHitAt = -99;
@@ -522,6 +529,7 @@ export class World {
   private damage(e: Enemy, amount: number) {
     e.hp -= this.rollDamage(amount);
     e.flash = 0.12;
+    e.hurt = HURT_TIME;
     this.hitsLanded++;
     if (e.hp <= 0) this.kill(e);
   }
@@ -622,6 +630,7 @@ export class World {
       e.px = e.x;
       e.py = e.y;
       if (e.flash > 0) e.flash -= dt;
+      if (e.hurt > 0) e.hurt = Math.max(0, e.hurt - dt);
 
       const kind = ENEMY_KINDS[e.kind];
       let dx = p.x - e.x;
