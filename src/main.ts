@@ -16,7 +16,8 @@ import { makeRng } from './core/rng';
 import { Viewport } from './render/viewport';
 import { drawJoystick, circle, ring } from './render/draw';
 import { drawBoss, drawCreature, drawHero, type ActorState, type CreatureId } from './render/actors';
-import { drawTerrain, BIOMES, biomeAt } from './render/terrain';
+import { drawTerrain, BIOMES, biomeAt, roundAt } from './render/terrain';
+import { DecalField } from './render/decals';
 import { drawGem, drawPickup, drawProjectile } from './render/items';
 import { World, type RunEvent } from './game/world';
 import { BALANCE as B } from './game/balance';
@@ -29,7 +30,8 @@ import { CardOverlay, QuizOverlay, showAwaken } from './ui/overlays';
 import { Hud } from './ui/hud';
 import { Screens } from './ui/screens';
 import { submitScore } from './net/leaderboard';
-import { apply as applySettings, getSettings } from './meta/settings';
+import { apply as applySettings, getSettings, setSetting } from './meta/settings';
+import { sound } from './audio/sound';
 import {
   clearRun,
   loadIdentity,
@@ -78,7 +80,15 @@ let lowFpsFor = 0;
 let banner = { text: '', until: 0 };
 let trialCorrect = 0;
 /** 주인공 애니메이션 상태 — 이동 거리로 걷기 위상을 돌린다 */
-const hero: ActorState = { walk: 0, facing: 1, hurt: 0, levelUp: 0, colorSafe: false };
+const hero: ActorState = { walk: 0, facing: 1, hurt: 0, hurtT: 0, hurtDx: 1, levelUp: 0, colorSafe: false };
+/** 지나간 자리가 부서지는 자국 */
+const decals = new DecalField();
+const decalRnd = makeRng(0xd3ca1);
+/** 효과음용 — 지난 프레임의 누적값. 차이가 있으면 소리를 낸다 */
+let lastShots = 0;
+let lastHits = 0;
+let lastHurtT = 0;
+let lastRound = -1;
 let lastBiome = biomeAt(0);
 /** 'home' 이면 게임 화면을 그리지 않는다 */
 let mode: 'home' | 'play' = 'home';
@@ -92,6 +102,39 @@ pauseBtn.textContent = '⏸';
 pauseBtn.setAttribute('aria-label', '일시정지');
 app.appendChild(pauseBtn);
 pauseBtn.addEventListener('click', () => void openPause());
+
+/* ─────────────────────────── 소리 토글 ─────────────────────────── */
+// 설정 화면 안에만 두면 수업 중에 끄기까지 세 번을 눌러야 한다. 한 번에 닿게 한다.
+const soundBtn = document.createElement('button');
+soundBtn.className = 'pausebtn soundbtn';
+soundBtn.setAttribute('aria-label', '소리 켜기/끄기');
+const syncSoundBtn = () => {
+  const on = getSettings().sound;
+  soundBtn.textContent = on ? '🔊' : '🔇';
+  soundBtn.classList.toggle('off', !on);
+  soundBtn.setAttribute('aria-pressed', String(on));
+};
+soundBtn.addEventListener('click', () => {
+  const next = !getSettings().sound;
+  setSetting('sound', next); // apply() 안에서 sound.setEnabled 까지 걸린다
+  syncSoundBtn();
+  if (next && mode === 'play') sound.startBgm();
+});
+app.appendChild(soundBtn);
+syncSoundBtn();
+
+/**
+ * 브라우저는 **사용자 입력 전에 소리를 낼 수 없다.**
+ * 첫 탭/클릭/키 입력에서 오디오 컨텍스트를 깨운다. 한 번이면 충분하다.
+ */
+const unlockAudio = () => {
+  sound.unlock();
+  sound.setEnabled(getSettings().sound);
+  if (mode === 'play' && getSettings().sound) sound.startBgm();
+};
+for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
+  window.addEventListener(ev, unlockAudio, { once: true, passive: true });
+}
 
 /* ─────────────────────────── 보스 체력바 ─────────────────────────── */
 const bossBar = document.createElement('div');
@@ -110,25 +153,30 @@ world.on((e: RunEvent) => {
   switch (e.type) {
     case 'levelup':
       hero.levelUp = 1; // 금빛 고리 연출
+      sound.play('levelUp');
       void runLevelUpFlow();
       break;
     case 'awaken':
       banner = { text: `✨ ${e.evolution.result}`, until: world.time + 1.8 };
+      sound.play('awaken');
       break;
     case 'boss':
       bossName.textContent = e.name;
       bossBar.classList.add('show');
       banner = { text: `⚔️ ${e.name} 등장! (타이머 정지)`, until: world.time + 2.4 };
+      sound.play('bossAppear');
       break;
     case 'bossdown':
       bossBar.classList.remove('show');
       banner = { text: '🎉 보스 격파!', until: world.time + 2 };
+      sound.play('bossDown');
       break;
     case 'shield':
       void runShieldFlow();
       break;
     case 'hidden':
       banner = { text: '🐉 칠흑의 드래곤이 나타났다!', until: world.time + 3 };
+      sound.play('bossAppear');
       break;
     case 'bonus':
       void runBonusFlow();
@@ -142,9 +190,11 @@ world.on((e: RunEvent) => {
       break;
     case 'transcend':
       banner = { text: '🔥 초월! 힘이 솟아난다', until: world.time + 2.4 };
+      sound.play('awaken');
       break;
     case 'pickup':
       banner = { text: PICKUP_LABEL[e.kind], until: world.time + 1.8 };
+      sound.play('pickup');
       break;
     case 'gameover':
       void showResult(e.reason);
@@ -179,13 +229,15 @@ function enqueue(fn: () => Promise<void>) {
 
 async function runLevelUpFlow() {
   await enqueue(async () => {
-    while (world.pendingLevelUps > 0 && !world.over) {
-      world.pendingLevelUps--;
-      const quiz = selector.next();
+    for (let lv = world.takeLevelUp(); lv && !world.over; lv = world.takeLevelUp()) {
+      // 모든 레벨업마다 문제를 내면 10분에 30문항이 나온다. 절반만 묻고
+      // 나머지는 바로 카드를 준다 — 성장 속도는 그대로 두고 문항만 줄인다
+      const quiz = lv.withQuiz ? selector.next() : null;
       let ok = true;
       if (quiz) {
         ok = await quizOverlay.ask(quiz);
         selector.grade_(quiz, ok);
+        sound.play(ok ? 'correct' : 'wrong');
       }
       if (!ok) continue;
 
@@ -209,6 +261,7 @@ async function runBonusFlow() {
     if (!quiz) return;
     const ok = await quizOverlay.ask(quiz, '🎁 미믹 보너스 문제! 맞히면 특별 아이템');
     selector.grade_(quiz, ok);
+    sound.play(ok ? 'correct' : 'wrong');
     if (!ok) return;
     const kind = Math.random() < 0.5 ? 'magnet' : 'bomb';
     const a = Math.random() * Math.PI * 2;
@@ -226,6 +279,7 @@ async function runTrialFlow() {
       if (!quiz) break;
       const ok = await quizOverlay.ask(quiz, `🔥 초월 수련 ${i + 1}/${B.transcend.trialQuestions}`);
       selector.grade_(quiz, ok);
+      sound.play(ok ? 'correct' : 'wrong');
       if (ok) trialCorrect++;
     }
     world.addTranscendBonus(trialCorrect);
@@ -241,6 +295,7 @@ async function runShieldFlow() {
       if (!quiz) break;
       const ok = await quizOverlay.ask(quiz, '🛡 방어막을 깨라!');
       selector.grade_(quiz, ok);
+      sound.play(ok ? 'correct' : 'wrong');
       if (ok) break;
     }
     world.breakShield();
@@ -253,6 +308,7 @@ async function runShieldFlow() {
 async function goHome() {
   mode = 'home';
   loop.setPaused(true);
+  sound.stopBgm();
   bossBar.classList.remove('show');
   const saved = loadRun();
   const r = await screens.start({
@@ -280,9 +336,21 @@ function startRun(g: Grade, w: WeaponId) {
   world.reset(seed, starter);
   selector = new QuizSelector(grade, makeRng(seed));
   clearRun();
+  decals.clear();
+  resetSfxCounters();
   mode = 'play';
   banner = { text: '🕹️ 드래그하거나 방향키로 움직이자!', until: 4 };
+  sound.setRound(0);
+  sound.startBgm();
   loop.setPaused(false);
+}
+
+/** 새 판을 시작할 때 누적 카운터를 맞춰 둔다. 안 하면 첫 프레임에 소리가 몰린다 */
+function resetSfxCounters() {
+  lastShots = world.shotsFired;
+  lastHits = world.hitsLanded;
+  lastHurtT = 0;
+  lastRound = -1;
 }
 
 function resumeRun(s: SavedRun) {
@@ -302,8 +370,12 @@ function resumeRun(s: SavedRun) {
   for (const [id, lv] of s.weapons) world.weapons.set(id as WeaponId, lv);
   world.passives.clear();
   for (const [id, lv] of s.passives) world.applyUpgrade({ type: 'passive', id, emoji: '', level: lv, isNew: true, text: '' } as never);
+  decals.clear();
+  resetSfxCounters();
   mode = 'play';
   banner = { text: '💾 이어서 시작!', until: world.time + 2.5 };
+  sound.setRound(roundAt(world.time));
+  sound.startBgm();
   loop.setPaused(false);
 }
 
@@ -341,6 +413,7 @@ async function openPause() {
   if (r === 'resume') {
     loop.setPaused(false);
   } else {
+    sound.stopBgm();
     // 그만두면 이어할 수 있게 남겨 둔다
     saveRun(snapshotRun());
     void goHome();
@@ -350,6 +423,8 @@ async function openPause() {
 async function showResult(reason: 'dead' | 'cleared') {
   mode = 'home';
   loop.setPaused(true);
+  sound.stopBgm();
+  sound.play(reason === 'cleared' ? 'awaken' : 'gameOver');
   bossBar.classList.remove('show');
   clearRun();
 
@@ -393,7 +468,13 @@ async function showResult(reason: 'dead' | 'cleared') {
 
 const loop = new Loop({
   update: (dt) => {
-    if (mode === 'play') world.update(dt, input.axis());
+    if (mode !== 'play') return;
+    world.update(dt, input.axis());
+    // 자국은 **이동 거리** 기준이라 프레임률이 흔들려도 간격이 일정하다
+    decals.step(dt);
+    if (!lowPerf && !getSettings().forceLowPerf) {
+      decals.trail(world.player.x, world.player.y, biomeAt(world.time), decalRnd);
+    }
   },
   render: (alpha) => render(alpha),
   onStats: (s) => {
@@ -413,7 +494,10 @@ input.onTap('escape', () => void openPause());
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && mode === 'play') {
     loop.setPaused(true);
+    sound.stopBgm(); // 탭을 내렸는데 음악만 계속 나오면 안 된다
     saveRun(snapshotRun());
+  } else if (!document.hidden && mode === 'play' && getSettings().sound) {
+    sound.startBgm();
   }
 });
 
@@ -436,6 +520,20 @@ function render(alpha: number) {
   // 단계별 지형 — 3·6·9분에 바뀐다
   drawTerrain(ctx, world.time, vp.camX, vp.camY, vp.scale, vp.width, vp.height, vp.dpr);
   vp.begin(); // drawTerrain 이 변환을 건드리므로 되돌린다
+
+  // 지나온 자리의 파손 자국 — 지형 위, 액터 아래
+  if (!lowPerf && !getSettings().forceLowPerf) {
+    decals.draw(
+      ctx,
+      (x) => vp.toScreenX(x),
+      (y) => vp.toScreenY(y),
+      vp.scale,
+      vp.dpr,
+      vp.camX,
+      vp.camY,
+      vp.viewRadiusWorld + 120,
+    );
+  }
 
   const nowBiome = biomeAt(world.time);
   if (nowBiome !== lastBiome && mode === 'play') {
@@ -499,13 +597,40 @@ function render(alpha: number) {
     const by = vp.toScreenY(b.py + (b.y - b.py) * alpha);
     const br = b.def.radius * S;
     const breathT = b.breathing > 0 ? 1 - b.breathing / b.def.breathTime : 0;
-    drawBoss(ctx, b.def.skin, bx, by, br * 1.7, b.anim, b.facing, breathT, b.breathAngle, b.flash > 0, cs);
+    // hurtT 는 초 단위로 줄어든다. 0~1 진행도로 바꿔 넘긴다
+    drawBoss(
+      ctx, b.def.skin, bx, by, br * 1.7, b.anim, b.facing, breathT, b.breathAngle,
+      b.flash > 0, cs, Math.min(1, b.hurtT / 0.3),
+    );
     if (b.shielded) {
       ring(ctx, bx, by, br * 1.25, 'rgba(120,200,255,0.9)', Math.max(3, 5 * S));
       ring(ctx, bx, by, br * 1.45, 'rgba(120,200,255,0.4)', Math.max(2, 3 * S));
     }
     bossFill.style.width = `${Math.max(0, (b.hp / b.maxHp) * 100)}%`;
     bossBar.classList.toggle('shielded', b.shielded);
+  }
+
+  // ── 효과음: 누적 카운터의 **차이**만 본다. 이벤트로 흘리면 초당 수십 건이 된다
+  if (mode === 'play') {
+    if (world.shotsFired !== lastShots) {
+      lastShots = world.shotsFired;
+      sound.play('shoot');
+    }
+    // 타격음. 초당 수십 발이 꽂히므로 sound 쪽에서 60ms 간격으로 솎아낸다
+    if (world.hitsLanded !== lastHits) {
+      lastHits = world.hitsLanded;
+      sound.play('hit');
+    }
+    // 피격은 잔여 시간이 **올라간** 프레임에만 (계속 울리면 안 된다)
+    if (p.hurtT > lastHurtT + 0.01) sound.play('playerHurt');
+    lastHurtT = p.hurtT;
+
+    // 라운드가 오르면 배경음이 조여든다
+    const r = roundAt(world.time);
+    if (r !== lastRound) {
+      lastRound = r;
+      sound.setRound(r);
+    }
   }
 
   const sx = vp.toScreenX(pxPos);
@@ -516,6 +641,9 @@ function render(alpha: number) {
   hero.walk = (hero.walk + moved / 46) % 1;
   if (Math.abs(p.x - p.px) > 0.01) hero.facing = p.x > p.px ? 1 : -1;
   hero.hurt = Math.max(0, p.invuln - (B.player.invulnAfterHit - 0.25));
+  hero.hurtT = Math.min(1, p.hurtT / B.player.hurtMotion);
+  // 밀려나는 방향은 화면 x 부호만 쓴다 — 어느 쪽으로 젖혀질지만 정하면 된다
+  if (p.hurtT > 0 && (p.hurtDx || p.hurtDy)) hero.hurtDx = p.hurtDx;
   hero.levelUp = Math.max(0, hero.levelUp - 1 / 45);
   drawHero(ctx, sx, sy, B.player.radius * 3.2 * S, hero);
 
@@ -527,16 +655,23 @@ function render(alpha: number) {
     ctx.font = `700 ${Math.round(20 * Math.min(1.4, S + 0.5))}px Pretendard, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     const w = ctx.measureText(banner.text).width + 28;
+    // 보스 체력바(상단 120~165px)가 떠 있으면 그 아래로 내린다.
+    // 보스 등장 배너와 보스 체력바는 **항상 동시에** 뜨므로 안 비키면 반드시 겹친다.
+    const top = world.boss.active
+      ? Math.min(vp.height * 0.55, 176)
+      : vp.height * 0.18;
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(vp.width / 2 - w / 2, vp.height * 0.18, w, 38);
+    ctx.fillRect(vp.width / 2 - w / 2, top, w, 38);
     ctx.fillStyle = '#ffe08a';
-    ctx.fillText(banner.text, vp.width / 2, vp.height * 0.18 + 26);
+    ctx.fillText(banner.text, vp.width / 2, top + 26);
     ctx.restore();
   }
 
   // 홈 화면에서는 HUD 를 숨긴다
   hud.setVisible(mode === 'play');
   pauseBtn.classList.toggle('show', mode === 'play');
+  // .pausebtn 은 기본이 display:none 이다. 소리 버튼도 같은 클래스를 쓰므로 함께 켠다
+  soundBtn.classList.toggle('show', mode === 'play');
   if (mode !== 'play') return;
 
   hud.update({

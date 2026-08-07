@@ -132,6 +132,8 @@ export type Boss = {
   hp: number;
   maxHp: number;
   flash: number;
+  /** 피격 반동 잔여 시간(초). flash 보다 길게 남아 몸이 움찔하는 게 보인다 */
+  hurtT: number;
   shielded: boolean;
   pendingShields: number[];
   lastPid: number;
@@ -159,6 +161,7 @@ export function makeBoss(): Boss {
     hp: 1,
     maxHp: 1,
     flash: 0,
+    hurtT: 0,
     shielded: false,
     pendingShields: [],
     lastPid: 0,

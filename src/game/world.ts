@@ -23,7 +23,7 @@ import { findEvolutions, type Evolution } from './evolution';
 import { Director, type TimelineEvent } from './director';
 import { BOSSES, HIDDEN_ACCURACY, makeBoss, type Boss, type BossKindId } from './boss';
 import { makePickupPool, type Pickup, type PickupKind } from './pickups';
-import { biomeAt } from '../render/terrain';
+import { biomeAt, roundAt } from '../render/terrain';
 
 export type Enemy = {
   alive: boolean;
@@ -60,6 +60,11 @@ export type Player = {
   level: number;
   xp: number;
   xpNext: number;
+  /** 피격 반동 잔여 시간(초) — 0보다 크면 비틀거린다 */
+  hurtT: number;
+  /** 밀려난 방향(단위 벡터) */
+  hurtDx: number;
+  hurtDy: number;
 };
 
 export type RunEvent =
@@ -123,6 +128,18 @@ export class World {
 
   stressTarget = 0;
 
+  /**
+   * 발사·타격 누적 횟수.
+   *
+   * 효과음을 이벤트로 흘리면 초당 수십 건이 되어 리스너 호출만으로 부담이고,
+   * 시뮬레이터(Node)에도 쓸모없는 이벤트가 쌓인다. 바깥이 프레임마다 **차이만**
+   * 보고 소리를 내도록 카운터로 노출한다.
+   */
+  shotsFired = 0;
+  hitsLanded = 0;
+  /** 레벨업 누계 — 몇 번째마다 문제를 낼지 판단한다 */
+  private levelUpsTotal = 0;
+
   constructor(seed = 1, starter: WeaponId = STARTER_WEAPONS[0]) {
     this.rng = makeRng(seed);
     this.enemies = new Pool<Enemy>(
@@ -165,6 +182,9 @@ export class World {
       level: 1,
       xp: 0,
       xpNext: B.level.xpToNext(1),
+      hurtT: 0,
+      hurtDx: 0,
+      hurtDy: 0,
     };
   }
 
@@ -235,7 +255,12 @@ export class World {
 
   /** 현재 지형의 효과 */
   get biomeMod() {
-    return B.biome[biomeAt(this.time)] ?? B.biome.grass;
+    return B.biome[biomeAt(this.time)] ?? B.biome.forest;
+  }
+
+  /** 현재 라운드의 난이도 계단 — 지형 전환과 같은 경계에서 오른다 */
+  get roundMod() {
+    return B.round[roundAt(this.time)] ?? B.round[0];
   }
 
   private movePlayer(dt: number, axis: Vec2) {
@@ -253,6 +278,7 @@ export class World {
     p.y += p.vy * dt;
 
     if (p.invuln > 0) p.invuln -= dt;
+    if (p.hurtT > 0) p.hurtT = Math.max(0, p.hurtT - dt);
   }
 
   /* ─────────────────────────── 스폰 ─────────────────────────── */
@@ -290,7 +316,8 @@ export class World {
     e.y = this.player.y + Math.sin(a) * r + (jitter ? Math.floor(jitter / 3) * 26 : 0);
     e.px = e.x;
     e.py = e.y;
-    e.maxHp = kind.hp * hpScale(this.time, B.enemy.hpScaleSeconds);
+    // 시간 배수 위에 라운드 계단을 곱한다 — 지형이 바뀌면 확실히 단단해진다
+    e.maxHp = kind.hp * hpScale(this.time, B.enemy.hpScaleSeconds) * this.roundMod.hp;
     e.hp = e.maxHp;
     e.kx = 0;
     e.ky = 0;
@@ -320,6 +347,7 @@ export class World {
     b.maxHp = def.hp;
     b.hp = def.hp;
     b.flash = 0;
+    b.hurtT = 0;
     b.pendingShields = [...def.shieldAt];
     b.shielded = false;
     b.lastPid = 0;
@@ -378,6 +406,7 @@ export class World {
         continue;
       }
       this.cooldowns.set(id, spec.cooldown / this.stats.rate);
+      this.shotsFired++;
 
       const ctx: FireContext = {
         px: p.x,
@@ -493,6 +522,7 @@ export class World {
   private damage(e: Enemy, amount: number) {
     e.hp -= this.rollDamage(amount);
     e.flash = 0.12;
+    this.hitsLanded++;
     if (e.hp <= 0) this.kill(e);
   }
 
@@ -501,6 +531,9 @@ export class World {
     if (b.shielded) return; // 방어막 — 문제를 맞혀야 깨진다
     b.hp -= this.rollDamage(amount);
     b.flash = 0.1;
+    this.hitsLanded++;
+    // 반동은 번쩍임보다 길게 남긴다 — 큰 몸집이 움찔하는 게 보여야 맞는 느낌이 난다
+    b.hurtT = 0.3;
     if (b.hp <= 0) this.killBoss();
     else this.checkShield();
   }
@@ -583,7 +616,7 @@ export class World {
   private stepEnemies(dt: number) {
     const p = this.player;
     const damp = Math.pow(B.enemy.knockbackDamp, dt);
-    const enemyMod = this.biomeMod.enemy;
+    const enemyMod = this.biomeMod.enemy * this.roundMod.speed;
 
     this.enemies.forEach((e) => {
       e.px = e.x;
@@ -627,7 +660,7 @@ export class World {
 
       if (p.invuln <= 0) {
         const hitR = kind.radius + B.player.radius;
-        if ((p.x - e.x) ** 2 + (p.y - e.y) ** 2 < hitR * hitR) this.hurtPlayer(kind.damage);
+        if ((p.x - e.x) ** 2 + (p.y - e.y) ** 2 < hitR * hitR) this.hurtPlayer(kind.damage, e.x, e.y);
       }
 
       if (
@@ -645,6 +678,7 @@ export class World {
     b.px = b.x;
     b.py = b.y;
     if (b.flash > 0) b.flash -= dt;
+    if (b.hurtT > 0) b.hurtT = Math.max(0, b.hurtT - dt);
 
     const p = this.player;
     const dx = p.x - b.x;
@@ -667,6 +701,7 @@ export class World {
       let diff = Math.abs(((ang - b.breathAngle + Math.PI) % (Math.PI * 2)) - Math.PI);
       if (d < b.def.breathRange && diff < 0.42) {
         p.hp = Math.max(0, p.hp - b.def.breathDps * dt);
+        p.hurtT = Math.max(p.hurtT, 0.14); // 불길 속에서는 계속 움찔거린다
         if (p.hp <= 0) {
           this.over = 'dead';
           this.emit({ type: 'gameover', reason: 'dead' });
@@ -681,7 +716,7 @@ export class World {
       }
     }
 
-    if (p.invuln <= 0 && d < b.def.radius + B.player.radius) this.hurtPlayer(b.def.damage);
+    if (p.invuln <= 0 && d < b.def.radius + B.player.radius) this.hurtPlayer(b.def.damage, b.x, b.y);
   }
 
   /**
@@ -705,10 +740,21 @@ export class World {
     this.emit({ type: 'bossflee', id: this.boss.def.id });
   }
 
-  private hurtPlayer(amount: number) {
+  private hurtPlayer(amount: number, sx?: number, sy?: number) {
     const p = this.player;
     p.hp = Math.max(0, p.hp - amount * B.enemy.damageScaleAt(this.time));
     p.invuln = B.player.invulnAfterHit;
+    // 맞은 쪽 반대로 밀려난다. 밀리는 방향은 비틀거리는 그림에도 그대로 쓴다
+    if (sx !== undefined && sy !== undefined) {
+      const dx = p.x - sx;
+      const dy = p.y - sy;
+      const d = Math.hypot(dx, dy) || 1;
+      p.hurtDx = dx / d;
+      p.hurtDy = dy / d;
+      p.vx += p.hurtDx * B.player.hurtKnockback;
+      p.vy += p.hurtDy * B.player.hurtKnockback;
+    }
+    p.hurtT = B.player.hurtMotion;
     this.shakeRequest += 0.25;
     if (p.hp <= 0) {
       this.over = 'dead';
@@ -807,6 +853,22 @@ export class World {
     this.emit({ type: 'levelup', level: this.player.level });
   }
 
+  /**
+   * 대기 중인 레벨업을 하나 꺼낸다.
+   *
+   * `withQuiz` 가 false 면 문제 없이 곧바로 강화 카드를 준다. 문항 수를 줄이면서도
+   * 성장 속도는 건드리지 않기 위한 장치다 — 레벨업 횟수 자체는 그대로다.
+   * (XP 곡선으로 문항을 줄였다가 클리어율이 26%까지 떨어진 적이 있다)
+   */
+  takeLevelUp(): { withQuiz: boolean } | null {
+    if (this.pendingLevelUps <= 0) return null;
+    this.pendingLevelUps--;
+    this.levelUpsTotal++;
+    const every = Math.max(1, B.level.quizEveryLevels);
+    // 1·3·5… 번째에 출제한다. 첫 레벨업은 반드시 포함돼야 규칙을 배운다
+    return { withQuiz: this.levelUpsTotal % every === 1 % every };
+  }
+
   /** 테스트용 — 특정 시각으로 건너뛴다. 지나친 타임라인 큐는 발동하지 않는다. */
   skipTo(t: number) {
     this.time = t;
@@ -899,6 +961,9 @@ export class World {
     p.level = 1;
     p.xp = 0;
     p.xpNext = B.level.xpToNext(1);
+    p.hurtT = 0;
+    p.hurtDx = 0;
+    p.hurtDy = 0;
 
     this.time = 0;
     this.kills = 0;
@@ -906,5 +971,8 @@ export class World {
     this.spawnAcc = 0;
     this.shakeRequest = 0;
     this.pendingLevelUps = 0;
+    this.shotsFired = 0;
+    this.hitsLanded = 0;
+    this.levelUpsTotal = 0;
   }
 }

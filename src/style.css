@@ -266,7 +266,9 @@ body {
 /* ── 보스 체력바 (Phase 4) ── */
 .bossbar {
   position: absolute; left: 50%; transform: translateX(-50%);
-  top: calc(64px + env(safe-area-inset-top));
+  /* 64px 이면 HUD 의 체력바·타이머 위에 겹쳐 글자가 서로 뭉갠다.
+     상단 블록(레벨·체력·타이머) 아래로 내린다 */
+  top: calc(120px + env(safe-area-inset-top));
   width: min(520px, 88vw); display: none; text-align: center; pointer-events: none;
 }
 .bossbar.show { display: block; }
@@ -361,6 +363,9 @@ body {
   cursor: pointer; touch-action: manipulation;
 }
 .pausebtn.show { display: block; }
+/* 소리 토글은 정지 버튼 왼쪽에. 교실에서 급하게 꺼야 할 때 한 번에 닿아야 한다 */
+.soundbtn { right: calc(66px + env(safe-area-inset-right)); }
+.soundbtn.off { opacity: .55; }
 
 /* ── 접근성 (Phase 7) ── */
 .opt-list { list-style: none; margin: 0 0 14px; padding: 0; }

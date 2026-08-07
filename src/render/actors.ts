@@ -18,6 +18,10 @@ export type ActorState = {
   facing: number;
   /** 피격 잔여 시간(초). 0보다 크면 붉게 번쩍 */
   hurt: number;
+  /** 피격 반동 진행도 0~1 (1 = 막 맞은 순간). 비틀거리는 자세에 쓴다 */
+  hurtT: number;
+  /** 밀려나는 방향 (화면 기준 x) — 반동이 기우는 쪽 */
+  hurtDx: number;
   /** 레벨업 연출 잔여 시간(초) */
   levelUp: number;
   /** 색약 모드 — 색 외에 형태로도 상태를 알린다 */
@@ -57,8 +61,21 @@ export function drawHero(
   const swing = Math.sin(st.walk * Math.PI * 2);
   const bob = Math.abs(Math.cos(st.walk * Math.PI * 2)) * u * 0.35;
 
+  /**
+   * 피격 반동 — 붉은 덮개만으로는 "맞았다"가 몸에 남지 않는다.
+   * 맞은 반대쪽으로 밀리며 상체가 젖혀지고, 곧 제자리로 돌아온다.
+   * 되돌아오는 구간에 살짝 반대로 넘어가게(overshoot) 해야 뻣뻣하지 않다.
+   */
+  const h = Math.max(0, Math.min(1, st.hurtT));
+  // 1 → 0 으로 줄어드는 동안 한 번 크게 튀었다가 진동하며 잦아든다
+  const recoil = h > 0 ? Math.sin(h * Math.PI * 1.7) * h : 0;
+  const lean = recoil * 0.34 * (st.hurtDx >= 0 ? 1 : -1);
+  const push = recoil * u * 1.5 * (st.hurtDx >= 0 ? 1 : -1);
+
   ctx.save();
-  ctx.translate(cx, cy - bob);
+  ctx.translate(cx + push, cy - bob + recoil * u * 0.5);
+  // 기울기는 방향 반전 **전에** 걸어야 좌우 어느 쪽을 보든 맞은 쪽으로 젖혀진다
+  if (recoil > 0.001) ctx.rotate(lean);
   if (st.facing < 0) ctx.scale(-1, 1);
 
   // 그림자
@@ -97,18 +114,33 @@ export function drawHero(
 
   ctx.restore();
 
-  // 피격 — 붉게 덮는다. 색약 모드에서는 흰 테두리를 함께 그려 색 없이도 보이게 한다
+  // 피격 — 붉게 덮는다. 색약 모드에서는 흰 테두리를 함께 그려 색 없이도 보이게 한다.
+  // 덮개도 비틀거리는 몸을 따라가야 한다. 제자리에 있으면 몸만 어긋나 보인다
   if (st.hurt > 0) {
+    const ox = cx + push;
+    const oy = cy + recoil * u * 0.5;
     ctx.save();
     ctx.globalAlpha = Math.min(0.6, st.hurt * 3);
     ctx.fillStyle = '#ff4d4d';
-    ctx.fillRect(cx - size * 0.45, cy - size * 0.72, size * 0.9, size * 1.3);
+    ctx.fillRect(ox - size * 0.45, oy - size * 0.72, size * 0.9, size * 1.3);
     if (st.colorSafe) {
       ctx.globalAlpha = 1;
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = Math.max(2, size * 0.09);
-      ctx.strokeRect(cx - size * 0.45, cy - size * 0.72, size * 0.9, size * 1.3);
+      ctx.strokeRect(ox - size * 0.45, oy - size * 0.72, size * 0.9, size * 1.3);
     }
+    ctx.restore();
+  }
+
+  // 충격파 — 맞은 지점에서 짧게 퍼졌다 사라진다
+  if (recoil > 0.02) {
+    ctx.save();
+    ctx.globalAlpha = recoil * 0.55;
+    ctx.strokeStyle = '#ffd0d0';
+    ctx.lineWidth = Math.max(1.5, size * 0.05);
+    ctx.beginPath();
+    ctx.arc(cx, cy, size * (0.35 + (1 - recoil) * 0.5), 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -363,11 +395,20 @@ export function drawBoss(
   breathAngle: number,
   flash: boolean,
   colorSafe = false,
+  /** 피격 반동 진행도 0~1 (1 = 막 맞은 순간) */
+  hurtT = 0,
 ) {
   const u = size / 8;
   const step = Math.sin(anim / 9); // 걷기
   const flap = Math.sin(anim / 5.5); // 날갯짓
-  const bob = flap * u * 0.3;
+  /**
+   * 피격 반동 — 흰 사각형만 덮으면 6000 체력짜리 보스가 맞는지 안 맞는지 모른다.
+   * 목이 뒤로 젖혀지고 몸이 뒤로 밀리며 날개가 크게 펴진다. 큰 몸집일수록
+   * 반응이 **느리고 크게** 와야 무게가 느껴지므로 회복 곡선을 완만하게 잡는다.
+   */
+  const h = Math.max(0, Math.min(1, hurtT));
+  const jolt = h > 0 ? Math.sin(h * Math.PI * 1.35) * h : 0;
+  const bob = flap * u * 0.3 - jolt * u * 0.4;
 
   const shade = (hex: string, amt: number) => {
     const n = parseInt(hex.slice(1), 16);
@@ -380,7 +421,8 @@ export function drawBoss(
   const light = shade(skin.body, 26);
 
   ctx.save();
-  ctx.translate(cx, cy - bob);
+  // 맞으면 진행 방향 반대로 밀린다
+  ctx.translate(cx - facing * jolt * u * 1.3, cy - bob);
   if (facing < 0) ctx.scale(-1, 1);
   ctx.lineJoin = 'round';
 
@@ -434,7 +476,7 @@ export function drawBoss(
   leg(0.6, 0, skin.body);
 
   // ── 날개 (막 + 손가락뼈). 위아래로 퍼덕이며 막이 접혔다 펴진다
-  const lift = flap * 1.7;
+  const lift = flap * 1.7 + jolt * 1.5; // 맞으면 날개를 크게 펼쳐 균형을 잡는다
   const wing = (dir: number, back: boolean) => {
     const tipX = dir * (5.4 + (back ? 0.6 : 0)) * u;
     const tipY = (-3.6 + lift) * u;
@@ -500,7 +542,8 @@ export function drawBoss(
   }
 
   // ── 목 (S자로 굽는다)
-  const neckSway = flap * 0.18;
+  // 맞으면 목이 뒤로 젖혀진다 — 반동이 가장 크게 읽히는 부위다
+  const neckSway = flap * 0.18 - jolt * 0.85;
   ctx.beginPath();
   ctx.moveTo(1.6 * u, -0.8 * u);
   ctx.bezierCurveTo(3.2 * u, (-1.6 + neckSway) * u, 3.0 * u, (-3.8 + neckSway) * u, 4.3 * u, (-4.4 + neckSway) * u);
@@ -515,7 +558,7 @@ export function drawBoss(
   // ── 머리
   ctx.save();
   ctx.translate(4.5 * u, (-4.6 + neckSway) * u);
-  ctx.rotate(-0.12 + neckSway * 0.2);
+  ctx.rotate(-0.12 + neckSway * 0.2 - jolt * 0.45);
   // 두개골
   ctx.beginPath();
   ctx.moveTo(-1.1 * u, 0.5 * u);
@@ -634,10 +677,23 @@ export function drawBoss(
     ctx.strokeRect(cx - size * 0.7, cy - size * 0.9, size * 1.4, size * 1.6);
   }
   if (flash) {
+    const ox = cx - facing * jolt * u * 1.3;
     ctx.save();
     ctx.globalAlpha = 0.65;
     ctx.fillStyle = '#fff';
-    ctx.fillRect(cx - size * 0.75, cy - size * 0.95, size * 1.5, size * 1.7);
+    ctx.fillRect(ox - size * 0.75, cy - size * 0.95, size * 1.5, size * 1.7);
+    ctx.restore();
+  }
+
+  // 충격 링 — 큰 몸집에 맞았다는 걸 멀리서도 알 수 있게 한다
+  if (jolt > 0.03) {
+    ctx.save();
+    ctx.globalAlpha = jolt * 0.5;
+    ctx.strokeStyle = '#fff2f2';
+    ctx.lineWidth = Math.max(2, u * 0.4);
+    ctx.beginPath();
+    ctx.arc(cx, cy, size * (0.5 + (1 - jolt) * 0.55), 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
 }
