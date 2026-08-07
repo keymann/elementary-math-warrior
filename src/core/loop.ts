@@ -14,7 +14,13 @@ const MAX_STEPS = 5;
 
 export type LoopCallbacks = {
   update: (dt: number) => void;
-  render: (alpha: number) => void;
+  /**
+   * @param alpha  고정 스텝 사이의 보간 계수
+   * @param frameDt 이 프레임의 실제 경과 시간(초).
+   *   카메라처럼 **렌더 쪽에서만 시간에 따라 움직이는 것**은 이 값을 써야 한다.
+   *   1/60 을 상수로 넘기면 120Hz 화면에서 두 배 빨리 움직인다.
+   */
+  render: (alpha: number, frameDt: number) => void;
   /** fps·스텝 수 등 계측값 보고 (1초 주기) */
   onStats?: (stats: LoopStats) => void;
 };
@@ -95,7 +101,7 @@ export class Loop {
       }
     }
 
-    this.cb.render(this.paused ? 1 : this.acc / FIXED_DT);
+    this.cb.render(this.paused ? 1 : this.acc / FIXED_DT, elapsed);
 
     this.frames++;
     this.frameMsSum += performance.now() - t0;

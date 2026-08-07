@@ -7,6 +7,7 @@
  *  - 게임 방법은 한 화면에 들어가는 분량으로 줄였다.
  */
 import { EVOLUTIONS } from '../game/evolution';
+import { heroPortraitUrl } from '../render/actors';
 import { PASSIVE_BY_ID } from '../game/stats';
 import { STARTER_WEAPONS, WEAPON_BY_ID, type WeaponId } from '../game/weapons';
 import type { Grade } from '../quiz/selector';
@@ -107,7 +108,7 @@ export class Screens {
                 const w = WEAPON_BY_ID.get(id)!;
                 const partner = EVOLUTIONS.find((e) => e.base === id)?.partner;
                 return `<button class="pick weapon ${id === starter ? 'on' : ''}" data-w="${id}">
-                  <span class="skin">🦔<i>${w.emoji}</i></span>
+                  <span class="skin"><img src="${heroPortraitUrl()}" alt="" /><i>${w.emoji}</i></span>
                   <span class="info">
                     <b>${id} <em>${WEAPON_TAG[id] ?? ''}</em></b>
                     <span>${w.describe}</span>
@@ -129,7 +130,10 @@ export class Screens {
             <div class="note">💡 <b>실명 대신 별명</b>을 써 주세요. 학급 코드를 넣으면 우리 반끼리 순위를 볼 수 있어요.</div>
           </div>
 
-          <div class="best">🏆 ${grade}학년 최고 점수: <b class="bestval">${opts.best ?? '-'}</b></div>
+          <button class="best hall" aria-label="명예의 전당 열기">
+            <span class="bl"><span class="bt">🏆 ${grade}학년 최고 점수: </span><b class="bestval">${opts.best ?? '-'}</b></span>
+            <span class="br">명예의 전당 보기 <b>›</b></span>
+          </button>
 
           <div class="actions">
             <button class="primary go">🚀 모험 시작!</button>
@@ -138,13 +142,14 @@ export class Screens {
           <div class="actions small">
             <button class="ghost how">❓ 게임 방법</button>
             <button class="ghost dex">✨ 각성 도감</button>
-            <button class="ghost hall">🏆 전당</button>
+            <button class="ghost hall">🏆 명예의 전당</button>
             <button class="ghost opt">⚙️ 설정</button>
           </div>
         </div>`);
 
       const bestVal = node.querySelector('.bestval') as HTMLElement;
-      const bestLabel = node.querySelector('.best') as HTMLElement;
+      // 라벨 텍스트만 별도 요소로 둔다 — 버튼의 firstChild 는 공백 노드라 안전하지 않다
+      const bestText = node.querySelector('.best .bt') as HTMLElement;
 
       node.addEventListener('click', (ev) => {
         const b = (ev.target as HTMLElement).closest('button');
@@ -153,7 +158,7 @@ export class Screens {
           grade = Number(b.dataset.g) as Grade;
           node.querySelectorAll('.grade').forEach((x) => x.classList.remove('on'));
           b.classList.add('on');
-          bestLabel.firstChild!.textContent = `🏆 ${grade}학년 최고 점수: `;
+          bestText.textContent = `🏆 ${grade}학년 최고 점수: `;
           bestVal.textContent = String(this.bestOf?.(grade) ?? '-');
         } else if (b.dataset.w) {
           starter = b.dataset.w as WeaponId;
